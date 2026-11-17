@@ -1,0 +1,1746 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Compose Pro Camera</title>
+  
+  <!-- Tailwind CSS & FontAwesome -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- PWA Manifest & Meta -->
+  <link id="pwa-manifest-link" rel="manifest" href="./manifest.json">
+  <meta name="theme-color" content="#09090b">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link id="apple-touch-icon" rel="apple-touch-icon" href="">
+
+  <style>
+    :root {
+      --bg-dark: #09090b;
+      --panel-dark: rgba(24, 24, 27, 0.85);
+      --accent-cyan: #00f2fe;
+      --accent-blue: #0072ff;
+      --accent-green: #22c55e;
+      --accent-amber: #f59e0b;
+      --accent-rose: #ef4444;
+    }
+
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: var(--bg-dark); font-family: system-ui, -apple-system, sans-serif; color: #f4f4f5; }
+
+    #app-container { display: flex; width: 100vw; height: 100vh; height: 100dvh; position: relative; overflow: hidden; background: #000; }
+    
+    /* Layout variations */
+    #app-container.layout-portrait { flex-direction: column; }
+    #app-container.layout-landscape { flex-direction: row; }
+
+    /* Viewfinder Container */
+    #viewfinder-container { flex: 1; position: relative; overflow: hidden; background: #000; display: flex; align-items: center; justify-content: center; }
+    #webcam-video, #simulated-canvas { width: 100%; height: 100%; object-fit: cover; position: absolute; inset: 0; transform-origin: center; }
+    #simulated-canvas { display: none; }
+
+    /* Overlays */
+    .overlay-canvas { position: absolute; inset: 0; pointer-events: none; width: 100%; height: 100%; }
+    #grain-overlay { position: absolute; inset: 0; pointer-events: none; background-image: radial-gradient(rgba(255,255,255,0.14) 1px, transparent 0); background-size: 4px 4px; opacity: 0; transition: opacity 0.2s ease; }
+
+    /* HUD elements */
+    .hud-chip { background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.15); color: #fff; font-size: 11px; font-weight: 600; padding: 6px 10px; border-radius: 9999px; display: flex; align-items: center; gap: 6px; cursor: pointer; transition: all 0.2s ease; user-select: none; }
+    .hud-chip:active { transform: scale(0.94); }
+    .hud-chip.active { background: rgba(0, 242, 254, 0.22); border-color: var(--accent-cyan); color: var(--accent-cyan); }
+    .hud-chip.timelapse-armed { background: rgba(245, 158, 11, 0.22); border-color: var(--accent-amber); color: var(--accent-amber); animation: pulseSlow 2s infinite; }
+    .hud-chip.timelapse-live { background: rgba(239, 68, 68, 0.28); border-color: var(--accent-rose); color: #fca5a5; animation: pulseFast 1s infinite; }
+
+    @keyframes pulseSlow { 0%, 100% { opacity: 1; } 50% { opacity: 0.65; } }
+    @keyframes pulseFast { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+    /* Control Panel */
+    #control-panel { background: var(--panel-dark); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-color: rgba(255, 255, 255, 0.12); display: flex; flex-direction: column; justify-content: space-between; z-index: 20; }
+    #app-container.layout-portrait #control-panel { width: 100%; height: 210px; border-top: 1px solid rgba(255,255,255,0.1); }
+    #app-container.layout-landscape #control-panel { width: 280px; height: 100%; border-left: 1px solid rgba(255,255,255,0.1); }
+
+    /* Shutter button */
+    #shutter-btn { width: 74px; height: 74px; border-radius: 50%; background: #fff; border: 4px solid rgba(255,255,255,0.4); position: relative; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: transform 0.1s ease, border-color 0.2s ease; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
+    #shutter-btn::after { content: ''; width: 60px; height: 60px; border-radius: 50%; background: #fff; border: 2px solid #09090b; transition: all 0.15s ease; }
+    #shutter-btn:active { transform: scale(0.91); }
+    #shutter-btn:active::after { background: var(--accent-cyan); }
+    #shutter-btn.counting::after { background: var(--accent-amber); animation: pulseFast 0.8s infinite; }
+    #shutter-btn.bursting::after { background: var(--accent-cyan); animation: pulseFast 0.3s infinite; }
+    #shutter-btn.timelapse-armed::after { background: var(--accent-amber); }
+    #shutter-btn.timelapse-running::after { background: var(--accent-rose); animation: pulseFast 0.9s infinite; }
+
+    /* Focus reticle */
+    #focus-reticle { position: absolute; width: 64px; height: 64px; border: 1.5px solid rgba(0, 242, 254, 0.85); border-radius: 4px; transform: translate(-50%, -50%) scale(1.3); opacity: 0; pointer-events: none; transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.2s ease; z-index: 15; }
+    #focus-reticle.active { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+    #focus-reticle.locked { border-color: var(--accent-green); box-shadow: 0 0 12px rgba(34,197,94,0.5); transform: translate(-50%, -50%) scale(0.95); opacity: 1; }
+    #focus-reticle::before, #focus-reticle::after { content: ''; position: absolute; background: rgba(0, 242, 254, 0.85); }
+    #focus-reticle.locked::before, #focus-reticle.locked::after { background: var(--accent-green); }
+    #focus-reticle::before { width: 6px; height: 1.5px; top: 50%; left: -4px; transform: translateY(-50%); }
+    #focus-reticle::after { width: 1.5px; height: 6px; left: 50%; top: -4px; transform: translateX(-50%); }
+
+    /* Toast notification */
+    #toast { position: fixed; top: 24px; left: 50%; transform: translateX(-50%) translateY(-20px); background: rgba(9, 9, 11, 0.88); backdrop-filter: blur(16px); border: 1px solid rgba(0, 242, 254, 0.4); color: #fff; padding: 10px 20px; border-radius: 9999px; font-size: 13px; font-weight: 500; opacity: 0; pointer-events: none; transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1); z-index: 100; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; max-width: 90vw; }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* Modals */
+    .app-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.78); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); z-index: 50; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.25s ease; padding: 16px; }
+    .app-modal.active { opacity: 1; pointer-events: auto; }
+    .modal-card { background: #18181b; border: 1px solid rgba(255,255,255,0.12); width: 100%; max-width: 520px; max-height: 90vh; border-radius: 20px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7); transform: scale(0.96); transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
+    .app-modal.active .modal-card { transform: scale(1); }
+
+    /* Gallery grid styles */
+    .gallery-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 12px; overflow-y: auto; }
+    .gallery-item { aspect-ratio: 1; border-radius: 10px; overflow: hidden; position: relative; background: #27272a; cursor: pointer; border: 2px solid transparent; transition: transform 0.15s ease; }
+    .gallery-item:active { transform: scale(0.96); }
+    .gallery-item img { width: 100%; height: 100%; object-fit: cover; }
+    .gallery-item-tag { position: absolute; bottom: 4px; left: 4px; background: rgba(0,0,0,0.65); font-size: 9px; padding: 2px 5px; border-radius: 4px; color: #fff; backdrop-filter: blur(4px); }
+    .gallery-burst-badge { position: absolute; top: 4px; right: 4px; background: rgba(0, 242, 254, 0.85); color: #000; font-size: 9px; font-weight: 700; padding: 2px 5px; border-radius: 4px; }
+    .gallery-burst-badge.timelapse-tag { background: rgba(245, 158, 11, 0.88); color: #000; }
+    .gallery-grid.select-mode .gallery-item.selected { border-color: var(--accent-cyan); box-shadow: 0 0 0 2px rgba(0,242,254,0.4); }
+    .gallery-select-check { position: absolute; top: 6px; left: 6px; width: 22px; height: 22px; border-radius: 50%; background: rgba(0,0,0,0.6); border: 2px solid #fff; display: none; align-items: center; justify-content: center; font-size: 11px; color: #fff; font-weight: 700; }
+    .gallery-grid.select-mode .gallery-select-check { display: flex; }
+    .gallery-grid.select-mode .gallery-item.selected .gallery-select-check { background: var(--accent-cyan); border-color: var(--accent-cyan); color: #000; }
+
+    /* Gallery Filter Bar */
+    .gallery-filter-pill { padding: 5px 12px; border-radius: 9999px; font-size: 11px; font-weight: 600; background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.7); border: 1px solid rgba(255,255,255,0.1); cursor: pointer; transition: all 0.2s ease; }
+    .gallery-filter-pill.active { background: rgba(0, 242, 254, 0.18); border-color: var(--accent-cyan); color: var(--accent-cyan); }
+
+    /* Custom scrollbar */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 10px; }
+  </style>
+</head>
+<body>
+
+  <!-- Hidden file inputs -->
+  <input type="file" id="native-camera-input" accept="image/*" capture="environment" style="display:none;">
+
+  <!-- Toast Notification -->
+  <div id="toast">Ready</div>
+
+  <!-- Main App Container -->
+  <div id="app-container" class="layout-portrait">
+
+    <!-- Viewfinder Area -->
+    <div id="viewfinder-container" onclick="handleViewfinderTap(event)">
+      <video id="webcam-video" autoplay playsinline muted></video>
+      <canvas id="simulated-canvas"></canvas>
+
+      <!-- Overlays -->
+      <svg id="grid-svg-overlay" class="overlay-canvas"></svg>
+      <canvas id="zebra-canvas" class="overlay-canvas"></canvas>
+      <canvas id="peaking-canvas" class="overlay-canvas"></canvas>
+      <div id="grain-overlay"></div>
+
+      <!-- Focus Reticle & Exposure Box -->
+      <div id="focus-reticle"></div>
+
+      <!-- Shutter Flash Effect -->
+      <div id="shutter-flash" style="position:absolute; inset:0; background:#fff; opacity:0; pointer-events:none; transition:opacity 0.08s ease; z-index:25;"></div>
+
+      <!-- Timer Countdown Overlay -->
+      <div id="timer-overlay" style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:86px; font-weight:800; color:#fff; text-shadow:0 4px 20px rgba(0,0,0,0.8); opacity:0; pointer-events:none; transition:opacity 0.15s ease; z-index:22;">3</div>
+
+      <!-- Top HUD Header -->
+      <div id="top-hud" style="position:absolute; top:12px; left:12px; right:12px; display:flex; justify-content:space-between; align-items:center; z-index:30; pointer-events:none;">
+        <div style="display:flex; gap:6px; align-items:center; pointer-events:auto; flex-wrap:wrap;">
+          <button type="button" class="hud-chip" onclick="openPwaModal()">
+            <span id="pwa-status-icon">🟢</span> <span id="pwa-status-text">PWA</span>
+          </button>
+          <button type="button" class="hud-chip" id="aeaf-lock-pill" onclick="unlockAeAf()" style="display:none;">
+            🔒 AF/AE LOCK
+          </button>
+          <button type="button" class="hud-chip" id="exposure-pill" onclick="document.getElementById('exposure-slider-wrap').classList.toggle('hidden')">
+            EV: <span id="exposure-val">0%</span>
+          </button>
+          <button type="button" class="hud-chip" id="peaking-sensitivity-pill" onclick="setPeakingSensitivity(state.peakingSensitivity % 3 + 1)" style="display:none;">
+            🎯 <span id="peaking-sensitivity-val">MED</span>
+          </button>
+        </div>
+
+        <div style="display:flex; gap:6px; align-items:center; pointer-events:auto; flex-wrap:wrap;">
+          <button type="button" class="hud-chip" id="timer-badge" onclick="cycleTimer()">
+            ⏱️ <span id="timer-text">OFF</span>
+          </button>
+          <button type="button" class="hud-chip" id="burst-badge" onclick="cycleBurstMode()">
+            ⚡ <span id="burst-text">OFF</span>
+          </button>
+          <button type="button" class="hud-chip" id="timelapse-badge" onclick="cycleTimelapseInterval()">
+            ⏳ <span id="timelapse-text">OFF</span>
+          </button>
+          <button type="button" class="hud-chip" id="timelapse-limit-badge" onclick="cycleTimelapseLimit()" style="display:none;" title="Time-Lapse Shot Limit">
+            🎯 <span id="timelapse-limit-text">∞</span>
+          </button>
+          <button type="button" class="hud-chip" id="ratio-badge" onclick="cycleAspectRatio()">
+            📐 <span id="ratio-text">FULL</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Exposure Slider Popup -->
+      <div id="exposure-slider-wrap" class="hidden" style="position:absolute; top:64px; left:16px; background:rgba(9,9,11,0.85); backdrop-filter:blur(16px); border:1px solid rgba(255,255,255,0.15); padding:10px 14px; border-radius:12px; z-index:35; display:flex; align-items:center; gap:10px;">
+        <span style="font-size:11px; font-weight:600; color:rgba(255,255,255,0.7);">EXPOSURE</span>
+        <input type="range" min="-50" max="50" value="0" step="5" oninput="setExposureCompensation(this.value)" style="accent-color:var(--accent-cyan); width:110px; cursor:pointer;">
+        <button type="button" onclick="setExposureCompensation(0); document.getElementById('exposure-slider-wrap').classList.add('hidden');" style="font-size:10px; padding:2px 6px; background:rgba(255,255,255,0.1); border-radius:4px; color:#fff; cursor:pointer;">Reset</button>
+      </div>
+
+      <!-- Live Burst & Time-Lapse Progress Pills -->
+      <div id="burst-progress-pill" style="position:absolute; top:72px; left:50%; transform:translateX(-50%); background:rgba(0,242,254,0.22); border:1px solid var(--accent-cyan); color:var(--accent-cyan); padding:6px 14px; border-radius:9999px; font-size:12px; font-weight:700; letter-spacing:0.5px; z-index:30; display:none; pointer-events:none;">
+        ⚡ BURST 1 / 3
+      </div>
+      <div id="timelapse-progress-pill" style="position:absolute; top:72px; left:50%; transform:translateX(-50%); background:rgba(239,68,68,0.25); border:1px solid var(--accent-rose); color:#fca5a5; padding:6px 14px; border-radius:9999px; font-size:12px; font-weight:700; letter-spacing:0.5px; z-index:30; display:none; pointer-events:none;">
+        ⏳ TL ACTIVE • 0 SHOTS
+      </div>
+
+      <!-- Horizon Leveler Indicator -->
+      <div id="horizon-leveler" style="position:absolute; bottom:16px; left:50%; transform:translateX(-50%); width:120px; height:18px; pointer-events:none; z-index:30; display:flex; align-items:center; justify-content:center;">
+        <div style="position:relative; width:100%; height:2px; background:rgba(255,255,255,0.25);">
+          <div id="level-roll-bar" style="position:absolute; top:50%; left:50%; width:28px; height:6px; background:var(--accent-cyan); border-radius:3px; transform:translate(-50%, -50%); transition:transform 0.05s linear; box-shadow:0 0 8px rgba(0,242,254,0.8);"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Control Panel -->
+    <div id="control-panel">
+      <!-- Scrollable HUD Toolbar -->
+      <div style="display:flex; gap:10px; padding:10px 14px; overflow-x:auto; align-items:center; border-bottom:1px solid rgba(255,255,255,0.06);">
+        <button type="button" class="hud-chip" onclick="flipCamera()"><i class="fa-solid fa-camera-rotate"></i> Flip</button>
+        <button type="button" class="hud-chip" id="torch-btn" onclick="toggleTorch()" style="display:none;"><i class="fa-solid fa-bolt"></i> Torch</button>
+        <button type="button" class="hud-chip" id="zoom-pill" onclick="cycleZoomPreset()"><span id="zoom-val">1.0×</span></button>
+        <input type="range" id="zoom-slider" min="1" max="4" step="0.1" value="1" oninput="setCameraZoom(this.value)" style="accent-color:var(--accent-cyan); width:76px; cursor:pointer;">
+        <button type="button" class="hud-chip" id="zebra-btn" onclick="cycleZebraWarning()">🦓 <span id="zebra-text">OFF</span></button>
+        <button type="button" class="hud-chip" id="peaking-btn" onclick="cycleFocusPeaking()">🎯 <span id="peaking-text">OFF</span></button>
+        <button type="button" class="hud-chip" id="hist-btn" onclick="toggleHistogram()">📊 <span id="hist-text">Hist</span></button>
+        <button type="button" class="hud-chip" id="leveler-toggle-btn" class="active" onclick="toggleLeveler()">🧭 Level</button>
+        <button type="button" class="hud-chip" onclick="toggleOrientationOverride()"><i class="fa-solid fa-mobile-screen"></i> <span id="orient-text">AUTO</span></button>
+        <button type="button" class="hud-chip" onclick="openDriveModal()">☁️ Drive</button>
+        <button type="button" class="hud-chip" onclick="enableSimulatorMode()">🌄 Sim</button>
+      </div>
+
+      <!-- Color Look Selector Chips -->
+      <div style="display:flex; gap:8px; padding:8px 14px; overflow-x:auto; align-items:center; background:rgba(0,0,0,0.25);">
+        <button type="button" class="hud-chip" onclick="applyColorProfile('clean-natural')" id="prof-clean-natural">🌿 Clean</button>
+        <button type="button" class="hud-chip" onclick="applyColorProfile('warm-cinematic')" id="prof-warm-cinematic">🎬 Warm</button>
+        <button type="button" class="hud-chip" onclick="applyColorProfile('kodak-film')" id="prof-kodak-film">🎞️ Kodak</button>
+        <button type="button" class="hud-chip" onclick="applyColorProfile('teal-orange')" id="prof-teal-orange">🎨 Teal & Orange</button>
+        <button type="button" class="hud-chip" onclick="applyColorProfile('matte-pastel')" id="prof-matte-pastel">☁️ Matte</button>
+        <button type="button" class="hud-chip" onclick="applyColorProfile('none')" id="prof-none">⚪ Standard</button>
+      </div>
+
+      <!-- Bottom Shutter & Gallery Row -->
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 20px;">
+        <!-- Gallery Thumbnail Launcher -->
+        <button type="button" id="gallery-launch-btn" onclick="openGalleryModal()" style="width:52px; height:52px; border-radius:14px; border:2px solid rgba(255,255,255,0.22); background-size:cover; background-position:center; background-color:#18181b; position:relative; overflow:hidden; cursor:pointer;">
+          <span id="gallery-icon-fallback" style="font-size:20px; color:rgba(255,255,255,0.7);">🖼️</span>
+          <span id="gallery-count" style="position:absolute; bottom:2px; right:3px; background:rgba(0,0,0,0.75); font-size:9px; padding:1px 4px; border-radius:4px; font-weight:700; color:var(--accent-cyan);">0</span>
+        </button>
+
+        <!-- Main Shutter Button -->
+        <button type="button" id="shutter-btn" onclick="handleShutterClick()" aria-label="Shutter"></button>
+
+        <!-- Burst / Hold Trigger Button -->
+        <button type="button" id="burst-btn" style="width:52px; height:52px; border-radius:14px; border:1px solid rgba(255,255,255,0.2); background:rgba(255,255,255,0.08); color:#fff; display:flex; flex-direction:column; align-items:center; justify-content:center; cursor:pointer; font-size:11px; font-weight:700;">
+          <span>⚡</span>
+          <span id="burst-btn-tag" style="font-size:9px; opacity:0.8;">3×</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Luminance Histogram Floating Box -->
+  <div id="histogram-box" style="position:fixed; bottom:220px; right:16px; width:130px; height:72px; background:rgba(9,9,11,0.82); backdrop-filter:blur(12px); border:1px solid rgba(0,242,254,0.3); border-radius:10px; padding:6px; display:none; z-index:28; pointer-events:none;">
+    <div style="font-size:9px; font-weight:700; color:var(--accent-cyan); margin-bottom:2px; display:flex; justify-content:space-between;"><span>LUMA HIST</span></div>
+    <canvas id="histogram-canvas" width="118" height="48" style="width:100%; height:48px;"></canvas>
+  </div>
+
+  <!-- ==========================================================================
+       MODALS: PWA, Gallery, Lightbox, Drive Settings, Confirm Dialog
+       ========================================================================== -->
+
+  <!-- PWA Install Modal -->
+  <div id="pwa-modal" class="app-modal">
+    <div class="modal-card p-6 space-y-4">
+      <div class="flex justify-between items-center border-b border-white/10 pb-3">
+        <h3 class="text-base font-bold text-white">📱 Progressive Web App (PWA)</h3>
+        <button onclick="closePwaModal()" class="text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+      </div>
+      <div class="space-y-3 text-xs text-gray-300">
+        <p>Compose Pro Camera is fully configured for offline use with IndexedDB storage, caching, and background sync.</p>
+        <div id="pwa-net-status" class="p-2.5 rounded-lg bg-white/5 border border-white/10 font-medium">🟢 Online</div>
+        <div id="pwa-cache-status" class="p-2.5 rounded-lg bg-white/5 border border-white/10 font-medium">✅ Cached Locally</div>
+        <div id="pwa-sw-status" class="p-2.5 rounded-lg bg-white/5 border border-white/10 font-medium">✅ Active (sw.js)</div>
+      </div>
+      <div class="flex gap-2 pt-2">
+        <button onclick="triggerPwaInstall()" class="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-black font-bold text-xs shadow-lg">📲 Install to Home Screen</button>
+        <button onclick="downloadSwFile()" class="px-4 py-2.5 rounded-xl bg-white/10 text-white font-semibold text-xs hover:bg-white/20">📥 Download sw.js</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Gallery & Time-Lapse Compiler Modal -->
+  <div id="gallery-modal" class="app-modal">
+    <div class="modal-card" style="max-width:680px; height:90vh;">
+      <div class="flex justify-between items-center p-4 border-b border-white/10 bg-[#18181b]">
+        <div class="flex items-center gap-3">
+          <h3 class="text-base font-bold text-white">🖼️ Captured Gallery</h3>
+          <span id="gallery-modal-count" class="text-xs text-cyan-400 font-semibold">0 photos</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button type="button" id="gallery-select-all-btn" onclick="toggleSelectAllPhotos()" class="px-3 py-1.5 rounded-lg bg-white/10 text-white text-xs font-semibold hover:bg-white/20" style="display:none;">All</button>
+          <button type="button" id="gallery-select-mode-btn" onclick="toggleGallerySelectMode()" class="px-3 py-1.5 rounded-lg bg-cyan-500/20 text-cyan-400 text-xs font-semibold border border-cyan-500/40">☑️ Select</button>
+          <button onclick="closeGalleryModal()" class="text-gray-400 hover:text-white px-2"><i class="fa-solid fa-xmark text-lg"></i></button>
+        </div>
+      </div>
+
+      <!-- Gallery Filter Bar -->
+      <div id="gallery-filter-bar" style="display:flex; gap:6px; padding:8px 16px; background:#121215; border-bottom:1px solid rgba(255,255,255,0.06); align-items:center; overflow-x:auto;">
+        <button type="button" class="gallery-filter-pill active" data-filter="all" onclick="setGalleryFilter('all')">All Photos <span id="filter-count-all">(0)</span></button>
+        <button type="button" class="gallery-filter-pill" data-filter="burst" onclick="setGalleryFilter('burst')">⚡ Burst <span id="filter-count-burst">(0)</span></button>
+        <button type="button" class="gallery-filter-pill" data-filter="timelapse" onclick="setGalleryFilter('timelapse')">⏳ Time-Lapse <span id="filter-count-timelapse">(0)</span></button>
+      </div>
+
+      <!-- Time-Lapse Video Compiler Card -->
+      <div id="tl-compiler-card" style="display:none; flex-direction:column; gap:10px; padding:12px 16px; background:#1c1c22; border-bottom:1px solid rgba(255,255,255,0.1);">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div style="font-size:12px; font-weight:700; color:#00f2fe;">⏳ Time-Lapse Video Stitcher</div>
+          <div id="tl-compiler-meta" style="font-size:11px; color:rgba(255,255,255,0.6);">0 frames • 0.0s</div>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <select id="tl-session-select" onchange="updateCompilerEstimate()" style="flex:1; min-width:180px; background:#27272a; color:#fff; border:1px solid rgba(255,255,255,0.15); padding:7px 10px; border-radius:8px; font-size:12px; outline:none;"></select>
+          <div id="tl-fps-group" style="display:flex; gap:4px;">
+            <button type="button" class="hud-chip fps-chip" data-fps="15" onclick="setCompilerFps(15)" style="padding:5px 8px; font-size:10px;">15fps</button>
+            <button type="button" class="hud-chip fps-chip active" data-fps="24" onclick="setCompilerFps(24)" style="padding:5px 8px; font-size:10px;">24fps</button>
+            <button type="button" class="hud-chip fps-chip" data-fps="30" onclick="setCompilerFps(30)" style="padding:5px 8px; font-size:10px;">30fps</button>
+          </div>
+          <button type="button" class="hud-chip" id="tl-reverse-btn" onclick="toggleCompilerReverse()" style="padding:5px 10px; font-size:10px;" title="Reverse frame order">🔄 Rev</button>
+        </div>
+        <div style="display:flex; gap:8px; width:100%;">
+          <button type="button" id="tl-compile-btn" onclick="compileTimelapseVideo()" style="flex:1; padding:10px; border-radius:10px; background:linear-gradient(135deg, #00f2fe, #0072ff); color:#000; font-weight:700; font-size:12px; border:none; cursor:pointer;">
+            🎞️ Stitch Video (24 FPS)
+          </button>
+          <button type="button" id="tl-delete-session-btn" onclick="promptDeleteTimelapseSession()" style="padding:10px 12px; border-radius:10px; border:1px solid rgba(239,68,68,0.45); background:rgba(239,68,68,0.14); color:#fca5a5; font-weight:600; font-size:12px; cursor:pointer; white-space:nowrap;">
+            🗑️ Delete Session
+          </button>
+        </div>
+        <div id="tl-progress-wrap" style="width:100%; height:4px; background:rgba(255,255,255,0.1); border-radius:2px; display:none; overflow:hidden;">
+          <div id="tl-progress-fill" style="width:0%; height:100%; background:var(--accent-cyan); transition:width 0.1s linear;"></div>
+        </div>
+        <div id="tl-video-result" style="display:none; flex-direction:column; gap:8px; padding-top:6px;">
+          <video id="tl-compiled-video" controls playsinline style="width:100%; max-height:200px; border-radius:8px; background:#000;"></video>
+          <div style="display:flex; gap:8px;">
+            <button type="button" id="tl-download-video-btn" style="flex:1; padding:8px; border-radius:8px; background:rgba(34,197,94,0.2); border:1px solid rgba(34,197,94,0.4); color:#86efac; font-weight:600; font-size:11px; cursor:pointer;">⬇️ Download Video</button>
+            <button type="button" id="tl-share-video-btn" style="flex:1; padding:8px; border-radius:8px; background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); color:#fff; font-weight:600; font-size:11px; cursor:pointer;">📤 Share Video</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Scrollable Gallery Grid -->
+      <div id="gallery-grid-container" class="gallery-grid flex-1"></div>
+
+      <!-- Gallery Footer Actions -->
+      <div class="p-3 border-t border-white/10 bg-[#18181b] flex justify-between items-center flex-wrap gap-2">
+        <div class="flex items-center gap-3">
+          <label id="auto-download-label" class="flex items-center gap-2 cursor-pointer text-xs text-gray-300">
+            <input type="checkbox" id="gallery-auto-download-checkbox" onchange="toggleAutoDownload(this.checked)" class="accent-cyan-400">
+            Auto-Save to Device <span id="auto-dl-status-tag" style="color:var(--text-muted);">OFF</span>
+          </label>
+          <button type="button" id="dir-picker-row" onclick="pickSaveDirectory()" style="display:none;" class="text-xs text-cyan-400 hover:underline"><span id="save-folder-label">📁 Target Folder</span></button>
+        </div>
+        <div class="flex gap-2">
+          <button type="button" id="batch-download-btn" onclick="batchDownloadPhotos()" class="px-3 py-2 rounded-xl bg-white/10 text-white font-semibold text-xs hover:bg-white/20 disabled:opacity-40">⬇️ Download All</button>
+          <button type="button" id="batch-share-btn" onclick="batchShareSelectedPhotos()" class="px-3 py-2 rounded-xl bg-white/10 text-white font-semibold text-xs hover:bg-white/20" style="display:none;">📤 Share</button>
+          <button type="button" id="batch-drive-btn" onclick="batchUploadSelectedToDrive()" class="px-3 py-2 rounded-xl bg-blue-500/20 text-blue-400 font-semibold text-xs border border-blue-500/40" style="display:none;">☁️ Drive</button>
+          <button type="button" id="batch-delete-btn" onclick="promptDeleteSelected()" class="px-3 py-2 rounded-xl bg-red-500/20 text-red-400 font-semibold text-xs border border-red-500/40" style="display:none;">🗑️ Delete</button>
+          <button type="button" id="clear-all-btn" onclick="promptClearGallery()" class="px-3 py-2 rounded-xl bg-red-500/20 text-red-400 font-semibold text-xs border border-red-500/40">🗑️ Clear All</button>
+        </div>
+      </div>
+      <div id="batch-export-progress-wrap" style="width:100%; height:3px; background:rgba(255,255,255,0.1); display:none; overflow:hidden;">
+        <div id="batch-export-progress-fill" style="width:0%; height:100%; background:var(--accent-cyan); transition:width 0.1s linear;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Lightbox Modal -->
+  <div id="lightbox-modal" class="app-modal">
+    <div class="modal-card p-4 space-y-3" style="max-width:560px;">
+      <div class="flex justify-between items-center border-b border-white/10 pb-2">
+        <h4 id="lightbox-title" class="text-xs font-semibold text-gray-300">Photo Details</h4>
+        <button onclick="closeLightbox()" class="text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+      </div>
+      <div style="position:relative; width:100%; aspect-ratio:4/3; background:#000; border-radius:12px; overflow:hidden; display:flex; align-items:center; justify-content:center;">
+        <img id="lightbox-img" src="" alt="Zoomed photo" style="max-width:100%; max-height:100%; object-fit:contain;">
+      </div>
+      <div class="flex gap-2 pt-1">
+        <button type="button" id="lightbox-download-btn" class="flex-1 py-2.5 rounded-xl bg-white/10 text-white font-semibold text-xs hover:bg-white/20">⬇️ Download</button>
+        <button type="button" id="lightbox-share-btn" class="flex-1 py-2.5 rounded-xl bg-white/10 text-white font-semibold text-xs hover:bg-white/20">📤 Share</button>
+        <button type="button" id="lightbox-drive-btn" class="flex-1 py-2.5 rounded-xl bg-blue-500/20 text-blue-400 font-semibold text-xs border border-blue-500/40">☁️ Drive Backup</button>
+        <button type="button" id="lightbox-delete-btn" class="px-4 py-2.5 rounded-xl bg-red-500/20 text-red-400 font-semibold text-xs border border-red-500/40">🗑️ Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Google Drive Settings Modal -->
+  <div id="drive-modal" class="app-modal">
+    <div class="modal-card p-6 space-y-4">
+      <div class="flex justify-between items-center border-b border-white/10 pb-3">
+        <h3 class="text-base font-bold text-white">☁️ Google Drive Backup</h3>
+        <button onclick="closeDriveModal()" class="text-gray-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+      </div>
+      <div class="space-y-3 text-xs text-gray-300">
+        <p>Enter your Google Apps Script Web App URL (`/exec`) below. If left blank, Compose Pro Camera will automatically use the built-in default fallback URL.</p>
+        <div>
+          <label class="block font-semibold mb-1 text-gray-200">Apps Script Web App URL</label>
+          <input type="text" id="drive-script-url" placeholder="https://script.google.com/macros/s/.../exec" style="width:100%; background:#27272a; border:1px solid rgba(255,255,255,0.15); padding:10px; border-radius:10px; color:#fff; font-size:12px; outline:none;">
+        </div>
+        <div class="flex items-center justify-between pt-1">
+          <span>Auto-Upload every captured photo</span>
+          <label class="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" id="drive-autosync-toggle" class="sr-only peer">
+            <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-cyan-500"></div>
+          </label>
+        </div>
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 12px; border-radius:10px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); margin-top:10px;">
+          <div style="font-size:12px; color:rgba(255,255,255,0.8);">
+            📴 Queued Offline Photos: <strong id="pending-drive-count" style="color:#00f2fe;">0</strong>
+          </div>
+          <button type="button" id="drive-sync-now-btn" onclick="manualSyncDriveQueue()" style="padding:7px 12px; border-radius:8px; border:1px solid rgba(34,197,94,0.45); background:rgba(34,197,94,0.15); color:#86efac; font-weight:600; font-size:12px; cursor:pointer; white-space:nowrap;">
+            ☁️ Sync Now
+          </button>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:8px; margin-top:12px;">
+          <button type="button" id="drive-test-btn" onclick="testDriveConnection()" style="width:100%; padding:10px 14px; border-radius:10px; border:1px solid rgba(0,242,254,0.45); background:rgba(0,242,254,0.12); color:#00f2fe; font-weight:600; font-size:13px; cursor:pointer;">
+            🔌 Test Connection
+          </button>
+          <div id="drive-test-status" style="display:none; padding:9px 12px; border-radius:8px; font-size:12px; line-height:1.4;"></div>
+        </div>
+
+        <!-- Shot Telemetry Watermark Toggle -->
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-radius:10px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); margin-top:12px;">
+          <div style="font-size:13px; color:rgba(255,255,255,0.9); font-weight:500;">
+            🏷️ Shot Telemetry Watermark
+          </div>
+          <label style="position:relative; display:inline-block; width:44px; height:24px; cursor:pointer;">
+            <input type="checkbox" id="telemetry-watermark-checkbox" onchange="toggleTelemetryWatermark(this.checked)" style="opacity:0; width:0; height:0;">
+            <span style="position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background:rgba(255,255,255,0.2); transition:.3s; border-radius:24px;" id="telemetry-slider-bg"></span>
+            <span style="position:absolute; content:''; height:18px; width:18px; left:3px; bottom:3px; background:white; transition:.3s; border-radius:50%;" id="telemetry-slider-dot"></span>
+          </label>
+        </div>
+      </div>
+      <div class="flex gap-2 pt-2">
+        <button onclick="saveDriveSettings()" class="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-black font-bold text-xs shadow-lg">💾 Save Settings</button>
+        <button onclick="closeDriveModal()" class="px-4 py-2.5 rounded-xl bg-white/10 text-white font-semibold text-xs hover:bg-white/20">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirm Dialog Modal -->
+  <div id="confirm-dialog" class="app-modal">
+    <div class="modal-card p-6 space-y-4" style="max-width:400px;">
+      <h3 id="confirm-dialog-title" class="text-base font-bold text-white">Delete Photos?</h3>
+      <p id="confirm-dialog-desc" class="text-xs text-gray-300">Are you sure you want to delete?</p>
+      <div class="flex gap-2 pt-2">
+        <button id="confirm-dialog-action-btn" onclick="executeConfirmDelete()" class="flex-1 py-2.5 rounded-xl bg-red-600 text-white font-bold text-xs shadow-lg">Delete</button>
+        <button onclick="closeConfirmDialog()" class="flex-1 py-2.5 rounded-xl bg-white/10 text-white font-semibold text-xs hover:bg-white/20">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================================================
+       JAVASCRIPT APPLICATION LOGIC
+       ========================================================================== -->
+  <script>
+    const CACHE_NAME = 'compose-pro-cam-v1';
+
+    // Built-in default Google Apps Script Web App (/exec) URL fallback
+    const DEFAULT_DRIVE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycb.../exec';
+
+    const COMPANION_SW_CODE = `const CACHE_NAME = '${CACHE_NAME}';
+const ASSETS = ['./', './index.html', './manifest.json'];
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
+  );
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
+    )
+  );
+  self.clients.claim();
+});
+
+self.addEventListener('fetch', (event) => {
+  if (event.request.method !== 'GET') return;
+  event.respondWith(
+    caches.match(event.request).then((cached) => {
+      const networkFetch = fetch(event.request)
+        .then((response) => {
+          if (response && response.status === 200) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+          }
+          return response;
+        })
+        .catch(() => cached || caches.match('./index.html'));
+      return cached || networkFetch;
+    })
+  );
+});`;
+
+    const PROFILE_LABELS = {
+      'clean-natural': 'Clean Natural',
+      'warm-cinematic': 'Warm Cinematic',
+      'kodak-film': 'Kodak Film Look',
+      'teal-orange': 'Moody Teal & Orange',
+      'matte-pastel': 'Matte Pastel',
+      'none': 'Standard'
+    };
+
+    const state = {
+      orientationMode: 'AUTO',
+      aspectRatio: 'full',
+      timerSeconds: 0,
+      timerInterval: null,
+      burstCount: 0,
+      isBursting: false,
+      burstHoldReleased: false,
+      timelapseIntervalSec: 0,
+      timelapseShotLimit: 0,
+      isTimelapseRunning: false,
+      timelapseShotCount: 0,
+      timelapseNextShotAt: 0,
+      timelapseTicker: null,
+      timelapseCapturing: false,
+      wakeLockSentinel: null,
+      compilerFps: 24,
+      compilerReverse: false,
+      isCompilingVideo: false,
+      timelapseSessions: [],
+      compiledVideoUrl: null,
+      compiledVideoBlob: null,
+      compiledVideoFilename: '',
+      zebraMode: 0,
+      zebraAnimFrame: null,
+      zebraPhase: 0,
+      zebraLastTick: 0,
+      peakingMode: 'off',
+      peakingSensitivity: 2,
+      peakingAnimFrame: null,
+      peakingLastTick: 0,
+      currentFacingMode: 'environment',
+      currentGrid: 'thirds',
+      gridColor: '#00f2fe',
+      gridOpacity: 0.75,
+      spiralQuadrant: 0,
+      currentColorProfile: 'clean-natural',
+      exposureComp: 0,
+      aeAfLocked: false,
+      justLockedAeAf: false,
+      zoomLevel: 1.0,
+      hardwareZoomSupported: false,
+      isPinching: false,
+      pinchStartDist: 0,
+      pinchStartZoom: 1.0,
+      justFinishedPinch: false,
+      torchOn: false,
+      histogramEnabled: false,
+      histogramTimer: null,
+      levelerEnabled: true,
+      autoDownloadDevice: localStorage.getItem('compose_auto_download') === 'true',
+      savedDirectoryHandle: null,
+      downloadQueue: Promise.resolve(),
+      galleryFilter: 'all',
+      gallerySelectMode: false,
+      selectedPhotoIds: new Set(),
+      isBatchExporting: false,
+      confirmDeleteMode: 'all',
+      pendingTlSessionIds: [],
+      googleDriveUrl: (localStorage.getItem('compose_drive_url') || '').trim() || DEFAULT_DRIVE_SCRIPT_URL,
+      googleDriveAutoSync: localStorage.getItem('compose_drive_sync') === 'true',
+      telemetryWatermarkEnabled: localStorage.getItem('compose_telemetry_watermark') === 'true',
+      isSyncingDriveQueue: false,
+      db: null,
+      stream: null,
+      activePhotoList: [],
+      simulatorActive: false,
+      deferredInstallPrompt: null,
+      swRegistered: false,
+      appShellCached: false
+    };
+
+    let exposureHideTimeout = null;
+    let pinchGuardTimeout = null;
+    let holdLockTimer = null;
+    let holdStartPos = { x: 0, y: 0 };
+
+    /* ==========================================================================
+       0. Embedded PWA Icons, Manifest, Cache API & Service Worker Registration
+       ========================================================================== */
+    function setupEmbeddedManifestAndIcons() {
+      const iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+        <rect width="512" height="512" rx="112" fill="#09090b"/>
+        <circle cx="256" cy="256" r="168" fill="none" stroke="#00f2fe" stroke-width="24"/>
+        <circle cx="256" cy="256" r="96" fill="none" stroke="#ffd700" stroke-width="12" stroke-dasharray="28 18"/>
+        <circle cx="256" cy="256" r="36" fill="#00f2fe"/>
+      </svg>`;
+      const iconDataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(iconSvg)}`;
+      document.getElementById('apple-touch-icon').href = iconDataUrl;
+    }
+
+    async function initOfflinePWA() {
+      setupEmbeddedManifestAndIcons();
+
+      if ('caches' in window && window.location.protocol.startsWith('http')) {
+        try {
+          const cache = await caches.open(CACHE_NAME);
+          await cache.add(window.location.href);
+          state.appShellCached = true;
+        } catch (e) {
+          state.appShellCached = false;
+        }
+      }
+
+      if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
+        try {
+          const reg = await navigator.serviceWorker.register('./sw.js', { scope: './' });
+          state.swRegistered = Boolean(reg);
+        } catch (e) {
+          state.swRegistered = false;
+        }
+      }
+      updateNetworkStatusUI();
+    }
+
+    function updateNetworkStatusUI() {
+      const online = navigator.onLine;
+      const chip = document.getElementById('pwa-status-chip');
+      const icon = document.getElementById('pwa-status-icon');
+      const text = document.getElementById('pwa-status-text');
+
+      if (icon && text) {
+        if (online) {
+          icon.innerText = '🟢';
+          text.innerText = 'PWA';
+        } else {
+          icon.innerText = '📴';
+          text.innerText = 'OFFLINE';
+        }
+      }
+    }
+
+    window.addEventListener('online', () => {
+      updateNetworkStatusUI();
+      showToast('Back online! Flushing offline Drive queue... 🌐');
+      flushPendingDriveQueue();
+    });
+
+    window.addEventListener('offline', () => {
+      updateNetworkStatusUI();
+      showToast('Offline mode active — photos save locally 📴');
+    });
+
+    function openPwaModal() {
+      updateNetworkStatusUI();
+      document.getElementById('pwa-modal').classList.add('active');
+    }
+
+    function closePwaModal() {
+      document.getElementById('pwa-modal').classList.remove('active');
+    }
+
+    async function triggerPwaInstall() {
+      if (state.deferredInstallPrompt) {
+        state.deferredInstallPrompt.prompt();
+        const choice = await state.deferredInstallPrompt.userChoice;
+        if (choice.outcome === 'accepted') showToast('Installing Compose Pro Camera! 📲');
+        state.deferredInstallPrompt = null;
+        return;
+      }
+      showToast('Browser Menu (⋮) → "Install App" or "Add to Home Screen"');
+    }
+
+    function downloadSwFile() {
+      const blob = new Blob([COMPANION_SW_CODE], { type: 'application/javascript' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'sw.js';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      showToast('Downloaded sw.js — upload beside index.html!');
+    }
+
+    /* ==========================================================================
+       0B. Auto-Download & Watermark Settings
+       ========================================================================== */
+    function initAutoDownloadUI() {
+      const deckCb = document.getElementById('auto-download-checkbox');
+      const galCb = document.getElementById('gallery-auto-download-checkbox');
+      const statusTag = document.getElementById('auto-dl-status-tag');
+      const dirRow = document.getElementById('dir-picker-row');
+
+      if (deckCb) deckCb.checked = state.autoDownloadDevice;
+      if (galCb) galCb.checked = state.autoDownloadDevice;
+      if (statusTag) {
+        statusTag.innerText = state.autoDownloadDevice ? 'ON' : 'OFF';
+        statusTag.style.color = state.autoDownloadDevice ? 'var(--accent-green)' : 'var(--text-muted)';
+      }
+      if (dirRow && 'showDirectoryPicker' in window) dirRow.style.display = 'flex';
+
+      toggleTelemetryWatermark(state.telemetryWatermarkEnabled);
+    }
+
+    function toggleAutoDownload(enabled) {
+      state.autoDownloadDevice = Boolean(enabled);
+      localStorage.setItem('compose_auto_download', String(state.autoDownloadDevice));
+      initAutoDownloadUI();
+      showToast(state.autoDownloadDevice ? '⬇️ Auto-Download ON' : '⬇️ Auto-Download OFF');
+    }
+
+    function toggleTelemetryWatermark(enabled) {
+      state.telemetryWatermarkEnabled = Boolean(enabled);
+      localStorage.setItem('compose_telemetry_watermark', String(state.telemetryWatermarkEnabled));
+      const cb = document.getElementById('telemetry-watermark-checkbox');
+      const bg = document.getElementById('telemetry-slider-bg');
+      const dot = document.getElementById('telemetry-slider-dot');
+      if (cb) cb.checked = state.telemetryWatermarkEnabled;
+      if (bg) bg.style.background = state.telemetryWatermarkEnabled ? '#00f2fe' : 'rgba(255,255,255,0.2)';
+      if (dot) dot.style.transform = state.telemetryWatermarkEnabled ? 'translateX(20px)' : 'translateX(0)';
+    }
+
+    async function pickSaveDirectory() {
+      if (!('showDirectoryPicker' in window)) return;
+      try {
+        const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+        state.savedDirectoryHandle = handle;
+        document.getElementById('save-folder-label').innerText = `Target: 📁 ${handle.name}`;
+        toggleAutoDownload(true);
+      } catch (e) {}
+    }
+
+    function dataUrlToBlob(dataUrl) {
+      const parts = dataUrl.split(',');
+      const mime = parts[0].match(/:(.*?);/)[1] || 'image/jpeg';
+      const binary = atob(parts[1]);
+      const len = binary.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
+      return new Blob([bytes], { type: mime });
+    }
+
+    function triggerDeviceDownload(dataUrl, filename, delayAfterMs = 0) {
+      const job = async () => {
+        const blob = dataUrlToBlob(dataUrl);
+        if (state.savedDirectoryHandle) {
+          try {
+            const fileHandle = await state.savedDirectoryHandle.getFileHandle(filename, { create: true });
+            const writable = await fileHandle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+            if (delayAfterMs > 0) await new Promise(r => setTimeout(r, delayAfterMs));
+            return;
+          } catch (err) { state.savedDirectoryHandle = null; }
+        }
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = filename;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 2500);
+        if (delayAfterMs > 0) await new Promise(r => setTimeout(r, delayAfterMs));
+      };
+      state.downloadQueue = state.downloadQueue.then(job, job);
+      return state.downloadQueue;
+    }
+
+    /* ==========================================================================
+       1. IndexedDB Persistent Gallery & Offline Drive Queue Storage
+       ========================================================================== */
+    function initDB() {
+      return new Promise((resolve) => {
+        const req = indexedDB.open('ComposeProGalleryDB', 2);
+        req.onupgradeneeded = (e) => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains('photos')) db.createObjectStore('photos', { keyPath: 'id', autoIncrement: true });
+          if (!db.objectStoreNames.contains('pendingUploads')) db.createObjectStore('pendingUploads', { keyPath: 'id', autoIncrement: true });
+        };
+        req.onsuccess = (e) => {
+          state.db = e.target.result;
+          refreshGalleryThumbnail();
+          resolve(state.db);
+        };
+        req.onerror = () => resolve(null);
+      });
+    }
+
+    async function savePhotoToDB(dataUrl, profileKey, burstLabel = '', timestampRaw = Date.now()) {
+      if (!state.db) return;
+      return new Promise((resolve) => {
+        const tx = state.db.transaction('photos', 'readwrite');
+        tx.objectStore('photos').add({
+          dataUrl,
+          profile: PROFILE_LABELS[profileKey] || 'Standard',
+          burstLabel,
+          timestamp: new Date(timestampRaw).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }),
+          timestampRaw
+        });
+        tx.oncomplete = () => { refreshGalleryThumbnail(); resolve(); };
+      });
+    }
+
+    async function queueOfflineDriveUpload(dataUrl, filename) {
+      if (!state.db || !state.db.objectStoreNames.contains('pendingUploads')) return;
+      return new Promise((resolve) => {
+        const tx = state.db.transaction('pendingUploads', 'readwrite');
+        tx.objectStore('pendingUploads').add({ dataUrl, filename, createdAt: Date.now() });
+        tx.oncomplete = resolve;
+      });
+    }
+
+    async function getPendingDriveUploads() {
+      if (!state.db || !state.db.objectStoreNames.contains('pendingUploads')) return [];
+      return new Promise((resolve) => {
+        const tx = state.db.transaction('pendingUploads', 'readonly');
+        const req = tx.objectStore('pendingUploads').getAll();
+        req.onsuccess = () => resolve(req.result || []);
+      });
+    }
+
+    async function removePendingDriveUpload(id) {
+      if (!state.db || !state.db.objectStoreNames.contains('pendingUploads')) return;
+      return new Promise((resolve) => {
+        const tx = state.db.transaction('pendingUploads', 'readwrite');
+        tx.objectStore('pendingUploads').delete(id);
+        tx.oncomplete = resolve;
+      });
+    }
+
+    async function refreshPendingDriveCountUI() {
+      const pending = await getPendingDriveUploads();
+      const countEl = document.getElementById('pending-drive-count');
+      const syncBtn = document.getElementById('drive-sync-now-btn');
+      if (countEl) countEl.innerText = pending.length;
+      if (syncBtn && !state.isSyncingDriveQueue) {
+        syncBtn.disabled = pending.length === 0;
+        syncBtn.style.opacity = pending.length === 0 ? '0.45' : '1';
+      }
+      return pending;
+    }
+
+    async function flushPendingDriveQueue(options = {}) {
+      const { quiet = false, onProgress = null } = options;
+      const targetUrl = (document.getElementById('drive-script-url')?.value.trim()) || state.googleDriveUrl || DEFAULT_DRIVE_SCRIPT_URL;
+
+      if (!navigator.onLine || !targetUrl || state.isSyncingDriveQueue) {
+        return { synced: 0, remaining: (await getPendingDriveUploads()).length };
+      }
+
+      const pending = await getPendingDriveUploads();
+      if (pending.length === 0) return { synced: 0, remaining: 0 };
+
+      state.isSyncingDriveQueue = true;
+      let synced = 0;
+
+      try {
+        for (let i = 0; i < pending.length; i++) {
+          const item = pending[i];
+          if (typeof onProgress === 'function') onProgress(i + 1, pending.length);
+          try {
+            const res = await fetch(targetUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+              body: JSON.stringify({ image: item.dataUrl, filename: item.filename })
+            });
+            const json = await res.json();
+            if (json.status === 'success') {
+              await removePendingDriveUpload(item.id);
+              synced++;
+              await refreshPendingDriveCountUI();
+            } else { break; }
+          } catch (e) { break; }
+        }
+      } finally {
+        state.isSyncingDriveQueue = false;
+        await refreshPendingDriveCountUI();
+      }
+
+      const remaining = (await getPendingDriveUploads()).length;
+      if (!quiet && synced > 0) showToast(`☁️ Synced ${synced} offline photo${synced === 1 ? '' : 's'} to Drive!`);
+      return { synced, remaining };
+    }
+
+    async function manualSyncDriveQueue() {
+      const syncBtn = document.getElementById('drive-sync-now-btn');
+      const statusBox = document.getElementById('drive-test-status');
+      const targetUrl = document.getElementById('drive-script-url').value.trim() || state.googleDriveUrl || DEFAULT_DRIVE_SCRIPT_URL;
+
+      if (!targetUrl) {
+        statusBox.style.display = 'block';
+        statusBox.style.background = 'rgba(239, 68, 68, 0.16)';
+        statusBox.style.border = '1px solid rgba(239, 68, 68, 0.45)';
+        statusBox.style.color = '#fca5a5';
+        statusBox.innerText = '⚠️ Enter your Google Apps Script Web App URL first.';
+        return;
+      }
+
+      const pending = await getPendingDriveUploads();
+      if (pending.length === 0) {
+        showToast('No queued offline photos to sync ✨');
+        return;
+      }
+
+      syncBtn.disabled = true;
+      syncBtn.innerText = `⏳ 0/${pending.length}`;
+      statusBox.style.display = 'block';
+      statusBox.style.background = 'rgba(255, 255, 255, 0.06)';
+      statusBox.style.border = '1px solid rgba(255, 255, 255, 0.15)';
+      statusBox.style.color = 'rgba(255, 255, 255, 0.85)';
+      statusBox.innerText = `Uploading ${pending.length} queued photo${pending.length === 1 ? '' : 's'} to Google Drive...`;
+
+      const { synced, remaining } = await flushPendingDriveQueue({
+        quiet: true,
+        onProgress: (current, total) => {
+          syncBtn.innerText = `⏳ ${current}/${total}`;
+          statusBox.innerText = `Uploading photo ${current} of ${total} to Google Drive...`;
+        }
+      });
+
+      syncBtn.innerText = '☁️ Sync Now';
+      await refreshPendingDriveCountUI();
+
+      if (synced > 0 && remaining === 0) {
+        statusBox.style.background = 'rgba(34, 197, 94, 0.16)';
+        statusBox.style.border = '1px solid rgba(34, 197, 94, 0.45)';
+        statusBox.style.color = '#86efac';
+        statusBox.innerText = `✅ All ${synced} queued photo${synced === 1 ? '' : 's'} synced to Google Drive!`;
+        showToast(`☁️ Synced ${synced} photo${synced === 1 ? '' : 's'} to Drive! ✅`);
+      } else {
+        statusBox.style.background = 'rgba(239, 68, 68, 0.16)';
+        statusBox.style.border = '1px solid rgba(239, 68, 68, 0.45)';
+        statusBox.style.color = '#fca5a5';
+        statusBox.innerText = '❌ Sync failed. Check URL or verify deployment access.';
+      }
+    }
+
+    async function getAllPhotosFromDB() {
+      if (!state.db) return [];
+      return new Promise((resolve) => {
+        const tx = state.db.transaction('photos', 'readonly');
+        const req = tx.objectStore('photos').getAll();
+        req.onsuccess = () => resolve(req.result.reverse());
+      });
+    }
+
+    async function deletePhotoFromDB(id) {
+      if (!state.db) return;
+      return new Promise((resolve) => {
+        const tx = state.db.transaction('photos', 'readwrite');
+        tx.objectStore('photos').delete(id);
+        tx.oncomplete = () => { refreshGalleryThumbnail(); resolve(); };
+      });
+    }
+
+    async function deleteMultiplePhotosFromDB(ids) {
+      if (!state.db || !ids || ids.length === 0) return;
+      return new Promise((resolve) => {
+        const tx = state.db.transaction('photos', 'readwrite');
+        const store = tx.objectStore('photos');
+        ids.forEach((id) => store.delete(id));
+        tx.oncomplete = () => { refreshGalleryThumbnail(); resolve(); };
+      });
+    }
+
+    async function refreshGalleryThumbnail() {
+      const photos = await getAllPhotosFromDB();
+      document.getElementById('gallery-count').innerText = photos.length;
+      const btn = document.getElementById('gallery-launch-btn');
+      const icon = document.getElementById('gallery-icon-fallback');
+      if (photos.length > 0) {
+        btn.style.backgroundImage = `url(${photos[0].dataUrl})`;
+        icon.style.display = 'none';
+      } else {
+        btn.style.backgroundImage = 'none';
+        icon.style.display = 'inline';
+      }
+    }
+
+    /* ==========================================================================
+       2. Camera Initialization & Viewfinder Gestures
+       ========================================================================== */
+    async function initCamera() {
+      if (state.isTimelapseRunning) stopTimelapse(true);
+      const videoEl = document.getElementById('webcam-video');
+      const fallbackEl = document.getElementById('viewfinder-container');
+
+      if (state.stream) state.stream.getTracks().forEach(t => t.stop());
+      if (state.aeAfLocked) unlockAeAf(true);
+
+      state.torchOn = false;
+      state.hardwareZoomSupported = false;
+      document.getElementById('torch-btn').style.display = 'none';
+
+      try {
+        state.stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: state.currentFacingMode }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+          audio: false
+        });
+      } catch (e) {
+        try {
+          state.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: state.currentFacingMode }, audio: false });
+        } catch (err) {
+          enableSimulatorMode();
+          return;
+        }
+      }
+
+      videoEl.srcObject = state.stream;
+      videoEl.style.display = 'block';
+      document.getElementById('simulated-canvas').style.display = 'none';
+      state.simulatorActive = false;
+
+      try { await videoEl.play(); } catch (e) {}
+
+      const track = state.stream.getVideoTracks()[0];
+      if (track && track.getCapabilities) {
+        const caps = track.getCapabilities();
+        if (caps.torch) document.getElementById('torch-btn').style.display = 'flex';
+        if (caps.zoom) {
+          state.hardwareZoomSupported = true;
+          const s = document.getElementById('zoom-slider');
+          s.min = caps.zoom.min || 1;
+          s.max = Math.min(caps.zoom.max || 4, 6);
+        }
+      }
+      setCameraZoom(state.zoomLevel);
+      renderGridOverlay();
+    }
+
+    function flipCamera() {
+      state.currentFacingMode = (state.currentFacingMode === 'environment') ? 'user' : 'environment';
+      initCamera();
+    }
+
+    async function toggleTorch() {
+      if (!state.stream) return;
+      const track = state.stream.getVideoTracks()[0];
+      if (!track) return;
+      state.torchOn = !state.torchOn;
+      try {
+        await track.applyConstraints({ advanced: [{ torch: state.torchOn }] });
+        document.getElementById('torch-btn').classList.toggle('active', state.torchOn);
+      } catch (e) { state.torchOn = false; }
+    }
+
+    async function setCameraZoom(val) {
+      const slider = document.getElementById('zoom-slider');
+      const minZ = parseFloat(slider.min) || 1.0;
+      const maxZ = parseFloat(slider.max) || 4.0;
+      state.zoomLevel = Math.min(maxZ, Math.max(minZ, parseFloat(val)));
+
+      const formatted = `${state.zoomLevel.toFixed(1)}×`;
+      slider.value = state.zoomLevel.toFixed(1);
+      document.getElementById('zoom-val').innerText = formatted;
+      document.getElementById('zoom-pill').innerText = formatted;
+
+      const videoEl = document.getElementById('webcam-video');
+      const simCanvas = document.getElementById('simulated-canvas');
+      const mirrorX = (!state.simulatorActive && state.currentFacingMode === 'user') ? -1 : 1;
+
+      if (state.hardwareZoomSupported && state.stream) {
+        const track = state.stream.getVideoTracks()[0];
+        try {
+          await track.applyConstraints({ advanced: [{ zoom: state.zoomLevel }] });
+          videoEl.style.transform = `scaleX(${mirrorX})`;
+          return;
+        } catch (e) { state.hardwareZoomSupported = false; }
+      }
+      const transform = `scale(${mirrorX * state.zoomLevel}, ${state.zoomLevel})`;
+      videoEl.style.transform = transform;
+      simCanvas.style.transform = `scale(${state.zoomLevel})`;
+    }
+
+    function cycleZoomPreset() {
+      const maxZ = parseFloat(document.getElementById('zoom-slider').max) || 4.0;
+      const presets = [1.0, 2.0, 3.0].filter(z => z <= maxZ);
+      setCameraZoom(presets.find(z => z > state.zoomLevel + 0.05) || 1.0);
+    }
+
+    function initViewfinderGestures() {
+      const vf = document.getElementById('viewfinder-container');
+      const getDist = (t1, t2) => Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+
+      vf.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 2) {
+          e.preventDefault();
+          state.isPinching = true;
+          state.pinchStartDist = getDist(e.touches[0], e.touches[1]);
+          state.pinchStartZoom = state.zoomLevel;
+        }
+      }, { passive: false });
+
+      vf.addEventListener('touchmove', (e) => {
+        if (state.isPinching && e.touches.length === 2) {
+          e.preventDefault();
+          setCameraZoom(state.pinchStartZoom * (getDist(e.touches[0], e.touches[1]) / state.pinchStartDist));
+        }
+      }, { passive: false });
+
+      vf.addEventListener('touchend', () => { state.isPinching = false; });
+    }
+
+    function enableSimulatorMode() {
+      if (state.isTimelapseRunning) stopTimelapse(true);
+      const canvas = document.getElementById('simulated-canvas');
+      const videoEl = document.getElementById('webcam-video');
+      videoEl.style.display = 'none';
+      canvas.style.display = 'block';
+      state.simulatorActive = true;
+      const ctx = canvas.getContext('2d');
+      const w = canvas.width = window.innerWidth;
+      const h = canvas.height = window.innerHeight;
+      const grad = ctx.createLinearGradient(0, 0, 0, h);
+      grad.addColorStop(0, '#1e1b4b');
+      grad.addColorStop(0.5, '#6366f1');
+      grad.addColorStop(1, '#fbcfe8');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+      setCameraZoom(state.zoomLevel);
+      renderGridOverlay();
+    }
+
+    function handleViewfinderTap(e) {
+      if (e.target.closest('#top-hud') || e.target.closest('#control-panel')) return;
+      if (state.aeAfLocked) { unlockAeAf(); return; }
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const reticle = document.getElementById('focus-reticle');
+      reticle.style.left = `${x}px`;
+      reticle.style.top = `${y}px`;
+      reticle.classList.add('active');
+      setTimeout(() => reticle.classList.remove('active'), 1200);
+    }
+
+    function unlockAeAf(silent = false) {
+      state.aeAfLocked = false;
+      document.getElementById('aeaf-lock-pill').style.display = 'none';
+      if (!silent) showToast('AE/AF Unlocked');
+    }
+
+    function setExposureCompensation(val) {
+      state.exposureComp = parseInt(val, 10);
+      document.getElementById('exposure-val‍').innerText = `${state.exposureComp > 0 ? '+' : ''}${state.exposureComp}%`;
+      applyColorProfile(state.currentColorProfile);
+    }
+
+    /* ==========================================================================
+       3. Aspect Ratio & Composition Grids
+       ========================================================================== */
+    function updateOrientationLayout() {
+      const app = document.getElementById('app-container');
+      const isLandscape = window.innerWidth > window.innerHeight;
+      app.className = state.orientationMode === 'AUTO' ? (isLandscape ? 'layout-landscape' : 'layout-portrait') : (state.orientationMode === 'LANDSCAPE' ? 'layout-landscape' : 'layout-portrait');
+      setTimeout(renderGridOverlay, 60);
+    }
+
+    function toggleOrientationOverride() {
+      const modes = ['AUTO', 'PORTRAIT', 'LANDSCAPE'];
+      state.orientationMode = modes[(modes.indexOf(state.orientationMode) + 1) % modes.length];
+      document.getElementById('orient-text').innerText = state.orientationMode;
+      updateOrientationLayout();
+    }
+
+    function cycleAspectRatio() {
+      const ratios = ['full', '4:3', '16:9', '1:1', '4:5'];
+      state.aspectRatio = ratios[(ratios.indexOf(state.aspectRatio) + 1) % ratios.length];
+      document.getElementById('ratio-text').innerText = state.aspectRatio.toUpperCase();
+      renderGridOverlay();
+    }
+
+    function getActiveCropRect(w, h) {
+      if (state.aspectRatio === 'full') return { x: 0, y: 0, w, h };
+      const ratioMap = { '4:3': 4/3, '16:9': 16/9, '1:1': 1, '4:5': 4/5 };
+      const target = ratioMap[state.aspectRatio] || (w/h);
+      let cw = w, ch = h;
+      if (w/h > target) cw = h * target; else ch = w / target;
+      return { x: (w - cw)/2, y: (h - ch)/2, w: cw, h: ch };
+    }
+
+    function renderGridOverlay() {
+      const svg = document.getElementById('grid-svg-overlay');
+      const box = document.getElementById('viewfinder-container');
+      const w = box.clientWidth;
+      const h = box.clientHeight;
+      svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+      const crop = getActiveCropRect(w, h);
+      const x1 = crop.w / 3, x2 = (2 * crop.w) / 3;
+      const y1 = crop.h / 3, y2 = (2 * crop.h) / 3;
+      svg.innerHTML = `
+        <g transform="translate(${crop.x}, ${crop.y})" stroke="#00f2fe" stroke-width="1.2" stroke-opacity="0.65">
+          <line x1="${x1}" y1="0" x2="${x1}" y2="${crop.h}" />
+          <line x1="${x2}" y1="0" x2="${x2}" y2="${crop.h}" />
+          <line x1="0" y1="${y1}" x2="${crop.w}" y2="${y1}" />
+          <line x1="0" y1="${y2}" x2="${crop.w}" y2="${y2}" />
+        </g>`;
+    }
+
+    window.addEventListener('resize', updateOrientationLayout);
+
+    /* ==========================================================================
+       4. Color Looks & Baking
+       ========================================================================== */
+    function applyColorProfile(profile) {
+      state.currentColorProfile = profile;
+      const videoEl = document.getElementById('webcam-video');
+      const canvasEl = document.getElementById('simulated-canvas');
+      const filters = {
+        'clean-natural': 'contrast(1.08) saturate(1.06)',
+        'warm-cinematic': 'contrast(1.06) sepia(0.18) saturate(0.94)',
+        'kodak-film': 'contrast(0.98) sepia(0.14) saturate(0.92)',
+        'teal-orange': 'contrast(1.18) saturate(1.15) hue-rotate(-6deg)',
+        'matte-pastel': 'contrast(0.86) saturate(0.82) sepia(0.08)',
+        'none': 'none'
+      };
+      videoEl.style.filter = filters[profile] || 'none';
+      canvasEl.style.filter = filters[profile] || 'none';
+      document.getElementById('grain-overlay').style.opacity = (profile === 'kodak-film') ? '0.6' : '0';
+    }
+
+    function bakeColorGradeToCanvas(ctx, w, h, profile) {
+      if (profile === 'none') return;
+      const imgData = ctx.getImageData(0, 0, w, h);
+      const d = imgData.data;
+      for (let i = 0; i < d.length; i += 4) {
+        if (profile === 'warm-cinematic') {
+          d[i] = Math.min(255, d[i] * 1.05 + 10);
+          d[i+2] = Math.max(0, d[i+2] * 0.92 - 8);
+        } else if (profile === 'kodak-film') {
+          const g = (Math.random() - 0.5) * 12;
+          d[i] = Math.min(255, d[i] * 1.06 + g);
+          d[i+1] = Math.min(255, d[i+1] * 0.98 + g);
+          d[i+2] = Math.min(255, d[i+2] * 0.92 + g);
+        }
+      }
+      ctx.putImageData(imgData, 0, 0);
+    }
+
+    /* ==========================================================================
+       5. Zebra, Peaking & Histogram
+       ========================================================================== */
+    function cycleZebraWarning() {
+      state.zebraMode = (state.zebraMode === 0) ? 95 : 0;
+      document.getElementById('zebra-text').innerText = state.zebraMode === 95 ? '95%' : 'OFF';
+      showToast(state.zebraMode === 95 ? '🦓 Zebra 95% IRE Active' : 'Zebra OFF');
+    }
+
+    function cycleFocusPeaking() {
+      state.peakingMode = state.peakingMode === 'off' ? 'red' : 'off';
+      document.getElementById('peaking-text').innerText = state.peakingMode.toUpperCase();
+      document.getElementById('peaking-sensitivity-pill').style.display = state.peakingMode !== 'off' ? 'flex' : 'none';
+      showToast(state.peakingMode !== 'off' ? '🎯 Focus Peaking RED' : 'Peaking OFF');
+    }
+
+    function setPeakingSensitivity(lvl) {
+      state.peakingSensitivity = lvl;
+      document.getElementById('peaking-sensitivity-val').innerText = lvl === 1 ? 'LOW' : (lvl === 2 ? 'MED' : 'HIGH');
+    }
+
+    function toggleHistogram() {
+      state.histogramEnabled = !state.histogramEnabled;
+      document.getElementById('histogram-box').style.display = state.histogramEnabled ? 'block' : 'none';
+    }
+
+    function toggleLeveler() {
+      state.levelerEnabled = !state.levelerEnabled;
+      document.getElementById('horizon-leveler').style.display = state.levelerEnabled ? 'flex' : 'none';
+    }
+
+    /* ==========================================================================
+       6. Timer, Burst & Time-Lapse Intervalometer
+       ========================================================================== */
+    function playTone(freq, dur) {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.frequency.value = freq;
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + dur);
+      } catch (e) {}
+    }
+
+    function cycleTimer() {
+      const opts = [0, 3, 10];
+      state.timerSeconds = opts[(opts.indexOf(state.timerSeconds) + 1) % opts.length];
+      document.getElementById('timer-text').innerText = state.timerSeconds === 0 ? 'OFF' : `${state.timerSeconds}s`;
+    }
+
+    function cycleBurstMode() {
+      const opts = [0, 3, 5];
+      state.burstCount = opts[(opts.indexOf(state.burstCount) + 1) % opts.length];
+      document.getElementById('burst-text').innerText = state.burstCount === 0 ? 'OFF' : `${state.burstCount}×`;
+      document.getElementById('burst-btn-tag').innerText = state.burstCount === 0 ? '3×' : `${state.burstCount}×`;
+    }
+
+    function cycleTimelapseInterval() {
+      if (state.isTimelapseRunning) { stopTimelapse(false); return; }
+      const opts = [0, 2, 5, 10];
+      state.timelapseIntervalSec = opts[(opts.indexOf(state.timelapseIntervalSec) + 1) % opts.length];
+      document.getElementById('timelapse-text').innerText = state.timelapseIntervalSec === 0 ? 'OFF' : `${state.timelapseIntervalSec}s`;
+      document.getElementById('timelapse-limit-badge').style.display = state.timelapseIntervalSec > 0 ? 'flex' : 'none';
+    }
+
+    function cycleTimelapseLimit() {
+      const limits = [0, 30, 60, 120];
+      state.timelapseShotLimit = limits[(limits.indexOf(state.timelapseShotLimit) + 1) % limits.length];
+      document.getElementById('timelapse-limit-text').innerText = state.timelapseShotLimit === 0 ? '∞' : state.timelapseShotLimit;
+    }
+
+    async function startTimelapse() {
+      if (state.isTimelapseRunning || state.timelapseIntervalSec <= 0) return;
+      state.isTimelapseRunning = true;
+      state.timelapseShotCount = 0;
+      document.getElementById('timelapse-progress-pill').style.display = 'block';
+
+      state.timelapseTicker = setInterval(async () => {
+        if (!state.isTimelapseRunning) return;
+        state.timelapseShotCount++;
+        document.getElementById('timelapse-progress-pill').innerText = `⏳ TL • ${state.timelapseShotCount} SHOTS`;
+        await capturePhoto({ silentToast: true, burstLabel: `TL #${state.timelapseShotCount}`, isTimelapseFrame: true });
+        if (state.timelapseShotLimit > 0 && state.timelapseShotCount >= state.timelapseShotLimit) stopTimelapse(false);
+      }, state.timelapseIntervalSec * 1000);
+    }
+
+    function stopTimelapse(quiet = false) {
+      if (!state.isTimelapseRunning) return;
+      clearInterval(state.timelapseTicker);
+      state.isTimelapseRunning = false;
+      document.getElementById('timelapse-progress-pill').style.display = 'none';
+      if (!quiet) showToast(`⏳ Time-Lapse finished (${state.timelapseShotCount} shots saved!)`);
+    }
+
+    function handleShutterClick() {
+      if (state.isTimelapseRunning) { stopTimelapse(false); return; }
+      if (state.timelapseIntervalSec > 0) { startTimelapse(); return; }
+      if (state.burstCount > 0) { runBurstSequence(state.burstCount); return; }
+      capturePhoto();
+    }
+
+    async function runBurstSequence(count) {
+      if (state.isBursting) return;
+      state.isBursting = true;
+      document.getElementById('burst-progress-pill').style.display = 'block';
+      for (let i = 1; i <= count; i++) {
+        document.getElementById('burst-progress-pill').innerText = `⚡ BURST ${i} / ${count}`;
+        await capturePhoto({ silentToast: true, burstLabel: `Burst ${i}/${count}` });
+        if (i < count) await new Promise(r => setTimeout(r, 150));
+      }
+      document.getElementById('burst-progress-pill').style.display = 'none';
+      state.isBursting = false;
+      showToast(`⚡ ${count}-shot burst saved!`);
+    }
+
+    /* ==========================================================================
+       7. Photo Capture, Telemetry Watermark & Drive Upload
+       ========================================================================== */
+    async function capturePhoto(options = {}) {
+      const { silentToast = false, burstLabel = '', isTimelapseFrame = false } = options;
+      playTone(940, 0.05);
+
+      const flash = document.getElementById('shutter-flash');
+      flash.style.opacity = '0.75';
+      setTimeout(() => { flash.style.opacity = '0'; }, 80);
+
+      const videoEl = document.getElementById('webcam-video');
+      const simCanvas = document.getElementById('simulated-canvas');
+      const useVideo = (!state.simulatorActive && videoEl.videoWidth > 0);
+
+      const rawW = useVideo ? videoEl.videoWidth : (simCanvas.width || window.innerWidth);
+      const rawH = useVideo ? videoEl.videoHeight : (simCanvas.height || window.innerHeight);
+      const crop = getActiveCropRect(rawW, rawH);
+
+      const outCanvas = document.createElement('canvas');
+      outCanvas.width = Math.round(crop.w);
+      outCanvas.height = Math.round(crop.h);
+      const ctx = outCanvas.getContext('2d');
+
+      ctx.drawImage(useVideo ? videoEl : simCanvas, crop.x, crop.y, crop.w, crop.h, 0, 0, outCanvas.width, outCanvas.height);
+      bakeColorGradeToCanvas(ctx, outCanvas.width, outCanvas.height, state.currentColorProfile);
+
+      const timestampRaw = Date.now();
+
+      // Shot Telemetry Watermark Stamping
+      if (state.telemetryWatermarkEnabled) {
+        const w = outCanvas.width;
+        const h = outCanvas.height;
+        const pad = Math.max(16, Math.round(w * 0.022));
+        const fontSize = Math.max(12, Math.round(w * 0.02));
+        ctx.save();
+        ctx.font = `600 ${fontSize}px system-ui, -apple-system, sans-serif`;
+        const dateStr = new Date(timestampRaw).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+        const timeStr = new Date(timestampRaw).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const profileName = PROFILE_LABELS[state.currentColorProfile] || 'Standard';
+        const line1 = `COMPOSE PRO • ${dateStr} ${timeStr}`;
+        const line2 = `${profileName} • ${state.aspectRatio.toUpperCase()} • ${state.zoomLevel.toFixed(1)}×${burstLabel ? ' • ' + burstLabel : ''}`;
+        const boxW = Math.max(ctx.measureText(line1).width, ctx.measureText(line2).width) + (pad * 1.8);
+        const boxH = (fontSize * 2.4) + (pad * 1.4);
+        const boxX = pad, boxY = h - boxH - pad;
+        ctx.fillStyle = 'rgba(5, 7, 11, 0.68)';
+        ctx.beginPath();
+        ctx.roundRect(boxX, boxY, boxW, boxH, 10);
+        ctx.fill();
+        ctx.fillStyle = '#00f2fe';
+        ctx.fillRect(boxX, boxY, 4, boxH);
+        ctx.fillStyle = '#fff';
+        ctx.fillText(line1, boxX + pad + 4, boxY + pad + (fontSize * 0.85));
+        ctx.fillStyle = 'rgba(255,255,255,0.72)';
+        ctx.font = `500 ${Math.round(fontSize * 0.9)}px system-ui, -apple-system, sans-serif`;
+        ctx.fillText(line2, boxX + pad + 4, boxY + pad + (fontSize * 2.05) + 4);
+        ctx.restore();
+      }
+
+      const dataUrl = outCanvas.toDataURL('image/jpeg', 0.92);
+      await savePhotoToDB(dataUrl, state.currentColorProfile, burstLabel, timestampRaw);
+
+      if (state.autoDownloadDevice && !isTimelapseFrame) {
+        triggerDeviceDownload(dataUrl, `Compose_${timestampRaw}.jpg`);
+      }
+
+      if (!silentToast) showToast('Photo saved to Gallery! 💾');
+      if (state.googleDriveAutoSync && state.googleDriveUrl) uploadToGoogleDrive(dataUrl, true);
+    }
+
+    async function uploadToGoogleDrive(dataUrl, quiet = false, customFilename = null) {
+      const targetUrl = state.googleDriveUrl || DEFAULT_DRIVE_SCRIPT_URL;
+      const filename = customFilename || `Compose_${Date.now()}.jpg`;
+
+      if (!navigator.onLine) {
+        await queueOfflineDriveUpload(dataUrl, filename);
+        if (!quiet) showToast('Offline — queued for Drive upload! 📴☁️');
+        return 'queued';
+      }
+
+      if (!quiet) showToast('Uploading to Google Drive... ☁️');
+      try {
+        const res = await fetch(targetUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ image: dataUrl, filename })
+        });
+        const json = await res.json();
+        if (json.status === 'success') {
+          if (!quiet) showToast('Uploaded to Google Drive! ✅');
+          return 'success';
+        }
+      } catch (e) {
+        await queueOfflineDriveUpload(dataUrl, filename);
+        if (!quiet) showToast('Network error — queued for Drive retry ☁️');
+        return 'queued';
+      }
+    }
+
+    /* ==========================================================================
+       8. Time-Lapse Video Compiler & Gallery Management
+       ========================================================================== */
+    function buildTimelapseSessions(photos) {
+      const tl = [...photos].filter(p => p.burstLabel && p.burstLabel.startsWith('TL #')).reverse();
+      const sessions = [];
+      let group = [];
+      for (const p of tl) {
+        const seq = parseInt(p.burstLabel.replace('TL #', ''), 10) || 1;
+        if (seq === 1 && group.length > 0) { sessions.push(group); group = []; }
+        group.push(p);
+      }
+      if (group.length > 0) sessions.push(group);
+      return sessions.map((frames, idx) => ({ index: idx, label: `Session #${idx + 1} (${frames.length} frames)`, frames })).reverse();
+    }
+
+    function refreshTimelapseCompilerUI(photos) {
+      const card = document.getElementById('tl-compiler-card');
+      const selectEl = document.getElementById('tl-session-select');
+      const sessions = buildTimelapseSessions(photos);
+      state.timelapseSessions = sessions;
+
+      if (sessions.length === 0) { card.style.display = 'none'; return; }
+      card.style.display = 'flex';
+      selectEl.innerHTML = '';
+      sessions.forEach((s, idx) => {
+        const opt = document.createElement('option');
+        opt.value = idx;
+        opt.textContent = s.label;
+        selectEl.appendChild(opt);
+      });
+      updateCompilerEstimate();
+    }
+
+    function setCompilerFps(fps) {
+      state.compilerFps = fps;
+      document.querySelectorAll('#tl-fps-group .fps-chip').forEach(c => c.classList.toggle('active', parseInt(c.dataset.fps) === fps));
+      updateCompilerEstimate();
+    }
+
+    function toggleCompilerReverse() {
+      state.compilerReverse = !state.compilerReverse;
+      document.getElementById('tl-reverse-btn').classList.toggle('active', state.compilerReverse);
+    }
+
+    function updateCompilerEstimate() {
+      const session = state.timelapseSessions[parseInt(document.getElementById('tl-session-select').value, 10) || 0];
+      const compileBtn = document.getElementById('tl-compile-btn');
+      if (!session) return;
+      const count = session.frames.length;
+      document.getElementById('tl-compiler-meta').innerText = `${count} frames • ${(count / state.compilerFps).toFixed(1)}s @ ${state.compilerFps}fps`;
+      compileBtn.disabled = count < 2;
+    }
+
+    function promptDeleteTimelapseSession() {
+      const session = state.timelapseSessions[parseInt(document.getElementById('tl-session-select').value, 10) || 0];
+      if (!session) return;
+      state.confirmDeleteMode = 'tl_session';
+      state.pendingTlSessionIds = session.frames.map(f => f.id);
+      document.getElementById('confirm-dialog-title').innerText = 'Delete Time-Lapse Session?';
+      document.getElementById('confirm-dialog-desc').innerText = `Delete all ${session.frames.length} frames in this session?`;
+      document.getElementById('confirm-dialog').classList.add('active');
+    }
+
+    async function compileTimelapseVideo() {
+      const session = state.timelapseSessions[parseInt(document.getElementById('tl-session-select').value, 10) || 0];
+      if (!session || session.frames.length < 2) return;
+      state.isCompilingVideo = true;
+      showToast('⏳ Stitching Time-Lapse video...');
+      
+      try {
+        const frames = state.compilerReverse ? [...session.frames].reverse() : [...session.frames];
+        const firstImg = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = frames[0].dataUrl; });
+        const canvas = document.createElement('canvas');
+        canvas.width = firstImg.width; canvas.height = firstImg.height;
+        const ctx = canvas.getContext('2d');
+        const stream = canvas.captureStream(state.compilerFps);
+        const recorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+        const chunks = [];
+        recorder.ondataavailable = e => chunks.push(e.data);
+        const stopped = new Promise(r => recorder.onstop = r);
+        recorder.start();
+
+        for (const f of frames) {
+          const img = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = f.dataUrl; });
+          ctx.drawImage(img, 0, 0);
+          await new Promise(r => setTimeout(r, 1000 / state.compilerFps));
+        }
+        recorder.stop();
+        await stopped;
+
+        const blob = new Blob(chunks, { type: 'video/webm' });
+        state.compiledVideoUrl = URL.createObjectURL(blob);
+        document.getElementById('tl-compiled-video').src = state.compiledVideoUrl;
+        document.getElementById('tl-video-result').style.display = 'flex';
+        showToast('🎬 Time-Lapse video compiled successfully!');
+      } finally {
+        state.isCompilingVideo = false;
+      }
+    }
+
+    function getFilteredPhotoList() {
+      if (state.galleryFilter === 'burst') return state.activePhotoList.filter(p => p.burstLabel && p.burstLabel.startsWith('Burst '));
+      if (state.galleryFilter === 'timelapse') return state.activePhotoList.filter(p => p.burstLabel && p.burstLabel.startsWith('TL #'));
+      return state.activePhotoList;
+    }
+
+    function setGalleryFilter(mode) {
+      state.galleryFilter = mode;
+      document.querySelectorAll('.gallery-filter-pill').forEach(p => p.classList.toggle('active', p.dataset.filter === mode));
+      renderGalleryGrid();
+    }
+
+    function renderGalleryGrid() {
+      const visible = getFilteredPhotoList();
+      const container = document.getElementById('gallery-grid-container');
+      container.innerHTML = '';
+      if (visible.length === 0) {
+        container.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:32px; color:rgba(255,255,255,0.5);">No photos found</div>';
+        return;
+      }
+      visible.forEach(p => {
+        const item = document.createElement('div');
+        item.className = 'gallery-item';
+        if (state.selectedPhotoIds.has(p.id)) item.classList.add('selected');
+        item.onclick = () => {
+          if (state.gallerySelectMode) {
+            if (state.selectedPhotoIds.has(p.id)) state.selectedPhotoIds.delete(p.id); else state.selectedPhotoIds.add(p.id);
+            item.classList.toggle('selected');
+          } else { openLightbox(p.id); }
+        };
+        item.innerHTML = `<img src="${p.dataUrl}" alt="Photo"><div class="gallery-select-check">✓</div><div class="gallery-item-tag">${p.profile}</div>`;
+        container.appendChild(item);
+      });
+    }
+
+    function toggleGallerySelectMode() {
+      state.gallerySelectMode = !state.gallerySelectMode;
+      document.getElementById('gallery-grid-container').classList.toggle('select-mode', state.gallerySelectMode);
+      document.getElementById('batch-delete-btn').style.display = state.gallerySelectMode ? 'inline-block' : 'none';
+    }
+
+    function toggleSelectAllPhotos() {
+      const visible = getFilteredPhotoList();
+      if (state.selectedPhotoIds.size === visible.length) state.selectedPhotoIds.clear();
+      else visible.forEach(p => state.selectedPhotoIds.add(p.id));
+      renderGalleryGrid();
+    }
+
+    async function batchDownloadPhotos() {
+      const targets = state.gallerySelectMode ? getFilteredPhotoList().filter(p => state.selectedPhotoIds.has(p.id)) : getFilteredPhotoList();
+      for (const p of targets) await triggerDeviceDownload(p.dataUrl, `Compose_${p.timestampRaw}.jpg`, 200);
+      showToast(`⬇️ Exported ${targets.length} photos!`);
+    }
+
+    async function batchShareSelectedPhotos() {
+      const targets = state.gallerySelectMode ? getFilteredPhotoList().filter(p => state.selectedPhotoIds.has(p.id)) : getFilteredPhotoList();
+      try {
+        const files = targets.map((p, i) => new File([dataUrlToBlob(p.dataUrl)], `Compose_${i}.jpg`, { type: 'image/jpeg' }));
+        if (navigator.canShare && navigator.canShare({ files })) { await navigator.share({ files, title: 'Compose Pro Photos' }); return; }
+      } catch (e) {}
+      batchDownloadPhotos();
+    }
+
+    async function batchUploadSelectedToDrive() {
+      const targets = state.gallerySelectMode ? getFilteredPhotoList().filter(p => state.selectedPhotoIds.has(p.id)) : getFilteredPhotoList();
+      for (const p of targets) await uploadToGoogleDrive(p.dataUrl, true, `Compose_${p.timestampRaw}.jpg`);
+      showToast(`☁️ Uploaded ${targets.length} photos to Drive!`);
+    }
+
+    async function openGalleryModal() {
+      if (state.isTimelapseRunning) stopTimelapse(false);
+      state.gallerySelectMode = false;
+      state.selectedPhotoIds.clear();
+      const photos = await getAllPhotosFromDB();
+      state.activePhotoList = photos;
+      document.getElementById('filter-count-all').innerText = `(${photos.length})`;
+      document.getElementById('filter-count-burst').innerText = `(${photos.filter(p => p.burstLabel?.startsWith('Burst ')).length})`;
+      document.getElementById('filter-count-timelapse').innerText = `(${photos.filter(p => p.burstLabel?.startsWith('TL ')).length})`;
+      refreshTimelapseCompilerUI(photos);
+      renderGalleryGrid();
+      document.getElementById('gallery-modal').classList.add('active');
+    }
+
+    function closeGalleryModal() { document.getElementById('gallery-modal').classList.remove('active'); }
+
+    function openLightbox(id) {
+      const photo = state.activePhotoList.find(p => p.id === id);
+      if (!photo) return;
+      document.getElementById('lightbox-img').src = photo.dataUrl;
+      document.getElementById('lightbox-title').innerText = `${photo.profile} • ${photo.timestamp}`;
+      document.getElementById('lightbox-download-btn').onclick = () => triggerDeviceDownload(photo.dataUrl, `Compose_${photo.timestampRaw}.jpg`);
+      document.getElementById('lightbox-delete-btn').onclick = async () => { await deletePhotoFromDB(id); closeLightbox(); openGalleryModal(); };
+      document.getElementById('lightbox-modal').classList.add('active');
+    }
+
+    function closeLightbox() { document.getElementById('lightbox-modal').classList.remove('active'); }
+
+    function promptClearGallery() {
+      state.confirmDeleteMode = 'all';
+      document.getElementById('confirm-dialog-title').innerText = 'Clear All Photos?';
+      document.getElementById('confirm-dialog-desc').innerText = 'This will permanently delete all saved photos.';
+      document.getElementById('confirm-dialog').classList.add('active');
+    }
+
+    function promptDeleteSelected() {
+      state.confirmDeleteMode = 'selected';
+      document.getElementById('confirm-dialog-title').innerText = `Delete ${state.selectedPhotoIds.size} Photos?`;
+      document.getElementById('confirm-dialog').classList.add('active');
+    }
+
+    function closeConfirmDialog() { document.getElementById('confirm-dialog').classList.remove('active'); }
+
+    async function executeConfirmDelete() {
+      if (state.confirmDeleteMode === 'selected') {
+        await deleteMultiplePhotosFromDB(Array.from(state.selectedPhotoIds));
+        state.selectedPhotoIds.clear();
+      } else if (state.confirmDeleteMode === 'tl_session') {
+        await deleteMultiplePhotosFromDB(state.pendingTlSessionIds);
+        state.pendingTlSessionIds = [];
+      } else {
+        const tx = state.db.transaction('photos', 'readwrite');
+        tx.objectStore('photos').clear();
+      }
+      closeConfirmDialog();
+      openGalleryModal();
+      showToast('🗑️ Deleted successfully');
+    }
+
+    async function openDriveModal() {
+      document.getElementById('drive-script-url').value = state.googleDriveUrl;
+      document.getElementById('drive-autosync-toggle').checked = state.googleDriveAutoSync;
+      document.getElementById('drive-test-status').style.display = 'none';
+      await refreshPendingDriveCountUI();
+      document.getElementById('drive-modal').classList.add('active');
+    }
+
+    function closeDriveModal() { document.getElementById('drive-modal').classList.remove('active'); }
+
+    async function testDriveConnection() {
+      const url = document.getElementById('drive-script-url').value.trim() || DEFAULT_DRIVE_SCRIPT_URL;
+      const statusBox = document.getElementById('drive-test-status');
+      statusBox.style.display = 'block';
+      statusBox.style.background = 'rgba(255,255,255,0.06)';
+      statusBox.style.color = '#fff';
+      statusBox.innerText = '🔌 Testing connection...';
+
+      try {
+        const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'ping' }) });
+        const json = await res.json();
+        if (json.status === 'success') {
+          statusBox.style.background = 'rgba(34,197,94,0.16)';
+          statusBox.style.color = '#86efac';
+          statusBox.innerText = `✅ ${json.message}`;
+          showToast('Drive connection verified! ✅');
+        } else { throw new Error(json.message); }
+      } catch (err) {
+        statusBox.style.background = 'rgba(239,68,68,0.16)';
+        statusBox.style.color = '#fca5a5';
+        statusBox.innerText = `❌ Connection failed: Check URL and ensure deployment access is set to "Anyone".`;
+      }
+    }
+
+    function saveDriveSettings() {
+      const entered = document.getElementById('drive-script-url').value.trim();
+      state.googleDriveUrl = entered || DEFAULT_DRIVE_SCRIPT_URL;
+      state.googleDriveAutoSync = document.getElementById('drive-autosync-toggle').checked;
+      if (entered) localStorage.setItem('compose_drive_url', entered); else localStorage.removeItem('compose_drive_url');
+      localStorage.setItem('compose_drive_sync', state.googleDriveAutoSync);
+      closeDriveModal();
+      showToast('Drive settings saved! ☁️');
+      flushPendingDriveQueue();
+    }
+
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      t.innerText = msg;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 2500);
+    }
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      await initDB();
+      await initOfflinePWA();
+      initAutoDownloadUI();
+      updateOrientationLayout();
+      initViewfinderGestures();
+      applyColorProfile(state.currentColorProfile);
+      initCamera();
+      flushPendingDriveQueue();
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,28 @@
+{
+  "id": "./",
+  "name": "Compose Pro Camera",
+  "short_name": "Compose Pro",
+  "description": "Pro composition grids, film color looks, burst mode, time-lapse compiler, and offline gallery.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "any",
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
+  "categories": ["photography", "photo", "utilities"],
+  "icons": [
+    {
+      "src": "data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='112' fill='%2309090b'/%3E%3Ccircle cx='256' cy='256' r='168' fill='none' stroke='%2300f2fe' stroke-width='24'/%3E%3Ccircle cx='256' cy='256' r='96' fill='none' stroke='%23ffd700' stroke-width='12' stroke-dasharray='28 18'/%3E%3Ccircle cx='256' cy='256' r='36' fill='%2300f2fe'/%3E%3C/svg%3E",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' fill='%2309090b'/%3E%3Ccircle cx='256' cy='256' r='192' fill='%2318181b' stroke='%2300f2fe' stroke-width='24'/%3E%3Ccircle cx='256' cy='256' r='64' fill='%2300f2fe'/%3E%3C/svg%3E",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
