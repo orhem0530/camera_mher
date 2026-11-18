@@ -365,8 +365,8 @@
   <!-- Main App Container -->
   <div id="app-container" class="layout-portrait">
 
-    <!-- Viewfinder Area -->
-    <div id="viewfinder-container" onclick="handleViewfinderTap(event)">
+    <!-- Viewfinder Area (Tap to focus, Double-tap to flip Golden Spiral corner) -->
+    <div id="viewfinder-container" onclick="handleViewfinderTap(event)" ondblclick="if (state.currentGrid === 'spiral') cycleSpiralOrientation();">
       <video id="webcam-video" autoplay playsinline muted></video>
       <canvas id="simulated-canvas"></canvas>
 
@@ -458,6 +458,7 @@
         <button type="button" class="hud-chip" id="zoom-pill" onclick="cycleZoomPreset()"><span id="zoom-val">1.0×</span></button>
         <input type="range" id="zoom-slider" min="1" max="4" step="0.1" value="1" oninput="setCameraZoom(this.value)" style="accent-color:var(--accent-cyan); width:74px; cursor:pointer;">
         <button type="button" class="hud-chip" onclick="cycleGridOverlay()"># <span id="grid-text">Thirds</span></button>
+        <button type="button" class="hud-chip active" id="spiral-flip-btn" onclick="cycleSpiralOrientation()" style="display:none;" title="Flip Golden Spiral Corner">🌀 <span id="spiral-corner-text">BR</span></button>
         <button type="button" class="hud-chip" id="leveler-toggle-btn" onclick="toggleLeveler()">🧭 Level</button>
         <button type="button" class="hud-chip" onclick="toggleOrientationOverride()"><i class="fa-solid fa-mobile-screen"></i> <span id="orient-text">AUTO</span></button>
         <button type="button" class="hud-chip" onclick="openDriveModal()">☁️ Drive</button>
@@ -756,6 +757,7 @@ self.addEventListener('fetch', (event) => {
       compiledVideoFilename: '',
       currentFacingMode: 'environment',
       currentGrid: 'thirds',
+      spiralOrientation: 0, // 0: BR, 1: BL, 2: TL, 3: TR
       currentColorProfile: 'clean-natural',
       exposureComp: 0,
       zoomLevel: 1.0,
@@ -1383,7 +1385,7 @@ self.addEventListener('fetch', (event) => {
     }
 
     /* ==========================================================================
-       3. Aspect Ratio, Grids & Color Grading
+       3. Aspect Ratio, Grids, Golden Spiral Flip & Color Grading
        ========================================================================== */
     function updateOrientationLayout() {
       const app = document.getElementById('app-container');
@@ -1410,11 +1412,34 @@ self.addEventListener('fetch', (event) => {
     }
 
     function cycleGridOverlay() {
-      const grids = ['thirds', 'phi', 'crosshair', 'none'];
-      const labels = { thirds: 'Thirds', phi: 'Golden', crosshair: 'Center', none: 'No Grid' };
+      const grids = ['thirds', 'phi', 'spiral', 'diagonal', 'crosshair', 'none'];
+      const labels = {
+        thirds: 'Thirds',
+        phi: 'Golden',
+        spiral: 'Spiral',
+        diagonal: 'Diagonal',
+        crosshair: 'Center',
+        none: 'No Grid'
+      };
       state.currentGrid = grids[(grids.indexOf(state.currentGrid) + 1) % grids.length];
       document.getElementById('grid-text').innerText = labels[state.currentGrid];
+
+      // Show Spiral 4-Corner Flip button only when Spiral overlay is active
+      const spiralBtn = document.getElementById('spiral-flip-btn');
+      if (spiralBtn) {
+        spiralBtn.style.display = state.currentGrid === 'spiral' ? 'flex' : 'none';
+      }
+
       renderGridOverlay();
+    }
+
+    function cycleSpiralOrientation() {
+      const corners = ['BR', 'BL', 'TL', 'TR'];
+      state.spiralOrientation = (state.spiralOrientation + 1) % 4;
+      const labelEl = document.getElementById('spiral-corner-text');
+      if (labelEl) labelEl.innerText = corners[state.spiralOrientation];
+      renderGridOverlay();
+      showToast(`🌀 Golden Spiral: ${corners[state.spiralOrientation]} Corner`);
     }
 
     function getActiveCropRect(w, h) {
@@ -1454,29 +1479,103 @@ self.addEventListener('fetch', (event) => {
       }
 
       let gridMarkup = '';
+      const cw = crop.w;
+      const ch = crop.h;
+
       if (state.currentGrid === 'thirds') {
-        const x1 = crop.w / 3, x2 = (2 * crop.w) / 3, y1 = crop.h / 3, y2 = (2 * crop.h) / 3;
+        const x1 = cw / 3, x2 = (2 * cw) / 3, y1 = ch / 3, y2 = (2 * ch) / 3;
         gridMarkup = `
-          <line x1="${x1}" y1="0" x2="${x1}" y2="${crop.h}" />
-          <line x1="${x2}" y1="0" x2="${x2}" y2="${crop.h}" />
-          <line x1="0" y1="${y1}" x2="${crop.w}" y2="${y1}" />
-          <line x1="0" y1="${y2}" x2="${crop.w}" y2="${y2}" />`;
+          <line x1="${x1}" y1="0" x2="${x1}" y2="${ch}" />
+          <line x1="${x2}" y1="0" x2="${x2}" y2="${ch}" />
+          <line x1="0" y1="${y1}" x2="${cw}" y2="${y1}" />
+          <line x1="0" y1="${y2}" x2="${cw}" y2="${y2}" />`;
       } else if (state.currentGrid === 'phi') {
-        const x1 = crop.w * 0.382, x2 = crop.w * 0.618, y1 = crop.h * 0.382, y2 = crop.h * 0.618;
+        const x1 = cw * 0.382, x2 = cw * 0.618, y1 = ch * 0.382, y2 = ch * 0.618;
         gridMarkup = `
-          <line x1="${x1}" y1="0" x2="${x1}" y2="${crop.h}" />
-          <line x1="${x2}" y1="0" x2="${x2}" y2="${crop.h}" />
-          <line x1="0" y1="${y1}" x2="${crop.w}" y2="${y1}" />
-          <line x1="0" y1="${y2}" x2="${crop.w}" y2="${y2}" />`;
+          <line x1="${x1}" y1="0" x2="${x1}" y2="${ch}" />
+          <line x1="${x2}" y1="0" x2="${x2}" y2="${ch}" />
+          <line x1="0" y1="${y1}" x2="${cw}" y2="${y1}" />
+          <line x1="0" y1="${y2}" x2="${cw}" y2="${y2}" />`;
+      } else if (state.currentGrid === 'spiral') {
+        let rx = 0, ry = 0, rw = cw, rh = ch;
+        let pathD = '';
+        let subdivLines = '';
+        const invPhi = 0.61803398875;
+
+        for (let step = 0; step < 7; step++) {
+          const dir = step % 4;
+          if (dir === 0) {
+            const sq = rw * invPhi;
+            subdivLines += `<line x1="${rx + sq}" y1="${ry}" x2="${rx + sq}" y2="${ry + rh}" stroke-opacity="0.35" stroke-dasharray="4 4" />`;
+            pathD += (step === 0 ? `M ${rx} ${ry + rh} ` : '') + `A ${sq} ${rh} 0 0 1 ${rx + sq} ${ry} `;
+            rx += sq;
+            rw -= sq;
+          } else if (dir === 1) {
+            const sq = rh * invPhi;
+            subdivLines += `<line x1="${rx}" y1="${ry + sq}" x2="${rx + rw}" y2="${ry + sq}" stroke-opacity="0.35" stroke-dasharray="4 4" />`;
+            pathD += `A ${rw} ${sq} 0 0 1 ${rx + rw} ${ry + sq} `;
+            ry += sq;
+            rh -= sq;
+          } else if (dir === 2) {
+            const sq = rw * invPhi;
+            const splitX = rx + rw - sq;
+            subdivLines += `<line x1="${splitX}" y1="${ry}" x2="${splitX}" y2="${ry + rh}" stroke-opacity="0.35" stroke-dasharray="4 4" />`;
+            pathD += `A ${sq} ${rh} 0 0 1 ${splitX} ${ry + rh} `;
+            rw -= sq;
+          } else {
+            const sq = rh * invPhi;
+            const splitY = ry + rh - sq;
+            subdivLines += `<line x1="${rx}" y1="${splitY}" x2="${rx + rw}" y2="${splitY}" stroke-opacity="0.35" stroke-dasharray="4 4" />`;
+            pathD += `A ${rw} ${sq} 0 0 1 ${rx} ${splitY} `;
+            rh -= sq;
+          }
+        }
+
+        const eyeX = rx + rw / 2;
+        const eyeY = ry + rh / 2;
+
+        // Flip SVG group across all 4 corners: 0=BR, 1=BL, 2=TL, 3=TR
+        const flipTransforms = [
+          '',
+          `translate(${cw}, 0) scale(-1, 1)`,
+          `translate(${cw}, ${ch}) scale(-1, -1)`,
+          `translate(0, ${ch}) scale(1, -1)`
+        ];
+        const tAttr = flipTransforms[state.spiralOrientation || 0];
+
+        gridMarkup = `
+          <g transform="${tAttr}">
+            ${subdivLines}
+            <path d="${pathD}" fill="none" stroke="#ffd700" stroke-width="1.6" stroke-opacity="0.88" />
+            <circle cx="${eyeX}" cy="${eyeY}" r="3.5" fill="#ffd700" fill-opacity="0.95" />
+          </g>`;
+      } else if (state.currentGrid === 'diagonal') {
+        const isWide = cw >= ch;
+        const recip = isWide ? (ch * ch) / cw : (cw * cw) / ch;
+        const reciprocals = isWide
+          ? `<line x1="0" y1="0" x2="${recip}" y2="${ch}" stroke-opacity="0.45" stroke-dasharray="5 5" />
+             <line x1="${cw}" y1="0" x2="${cw - recip}" y2="${ch}" stroke-opacity="0.45" stroke-dasharray="5 5" />
+             <line x1="0" y1="${ch}" x2="${recip}" y2="0" stroke-opacity="0.45" stroke-dasharray="5 5" />
+             <line x1="${cw}" y1="${ch}" x2="${cw - recip}" y2="0" stroke-opacity="0.45" stroke-dasharray="5 5" />`
+          : `<line x1="0" y1="0" x2="${cw}" y2="${recip}" stroke-opacity="0.45" stroke-dasharray="5 5" />
+             <line x1="0" y1="${ch}" x2="${cw}" y2="${ch - recip}" stroke-opacity="0.45" stroke-dasharray="5 5" />
+             <line x1="${cw}" y1="0" x2="0" y2="${recip}" stroke-opacity="0.45" stroke-dasharray="5 5" />
+             <line x1="${cw}" y1="${ch}" x2="0" y2="${ch - recip}" stroke-opacity="0.45" stroke-dasharray="5 5" />`;
+
+        gridMarkup = `
+          <line x1="0" y1="0" x2="${cw}" y2="${ch}" />
+          <line x1="${cw}" y1="0" x2="0" y2="${ch}" />
+          ${reciprocals}
+          <circle cx="${cw / 2}" cy="${ch / 2}" r="4" fill="none" />`;
       } else if (state.currentGrid === 'crosshair') {
-        const cx = crop.w / 2, cy = crop.h / 2;
+        const cx = cw / 2, cy = ch / 2;
         gridMarkup = `
           <line x1="${cx - 24}" y1="${cy}" x2="${cx + 24}" y2="${cy}" />
           <line x1="${cx}" y1="${cy - 24}" x2="${cx}" y2="${cy + 24}" />
           <circle cx="${cx}" cy="${cy}" r="30" fill="none" />`;
       }
 
-      svg.innerHTML = `${maskMarkup}<g transform="translate(${crop.x}, ${crop.y})" stroke="#00f2fe" stroke-width="1.3" stroke-opacity="0.7">${gridMarkup}</g>`;
+      svg.innerHTML = `${maskMarkup}<g transform="translate(${crop.x}, ${crop.y})" stroke="#00f2fe" stroke-width="1.3" stroke-opacity="0.72">${gridMarkup}</g>`;
     }
 
     function toggleLeveler() {
